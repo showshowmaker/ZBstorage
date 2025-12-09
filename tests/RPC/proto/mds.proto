@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package fs.mds;
+
+option cc_generic_services = true;
+
+import "common.proto";
+
+// 1. Storage 节点注册
+message RegisterNodeRequest {
+    string address = 1;              // Storage 节点的 "ip:port"
+    repeated string volume_ids = 2;  // 节点上本地卷的 ID（这里用字符串，常规做法是把 uint64 转成 string 上报）
+}
+
+message RegisterNodeResponse {
+    fs.common.StatusCode status = 1;
+}
+
+// 2. 元数据接口：创建文件
+message CreateFileRequest {
+    string path = 1;
+    int32 mode = 2;
+}
+message CreateFileResponse {
+    fs.common.StatusCode status = 1;
+    uint64 inode_id = 2;
+}
+
+// 3. 元数据接口：查找路径对应 inode
+message LookupRequest {
+    string path = 1;
+}
+message LookupResponse {
+    fs.common.StatusCode status = 1;
+    uint64 inode_id = 2;
+}
+
+// 4. 核心：块调度接口
+message GetBlockInfoRequest {
+    uint64 inode_id   = 1;
+    uint64 file_offset = 2;
+    bool is_write     = 3;
+}
+message GetBlockInfoResponse {
+    fs.common.StatusCode status = 1;
+    string storage_addr = 2; // 目标 Storage "ip:port"
+    uint64 volume_id    = 3; // 目标卷 ID（与 StorageServer 内部 VolumeManager 一致）
+    uint64 block_offset = 4; // 卷内物理偏移
+    uint64 block_length = 5; // 当前块长度（可先固定 4KiB 之类）
+}
+
+service MdsService {
+    rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+    rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+    rpc Lookup(LookupRequest) returns (LookupResponse);
+    rpc GetBlockInfo(GetBlockInfoRequest) returns (GetBlockInfoResponse);
+}

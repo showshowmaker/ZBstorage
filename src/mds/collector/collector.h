@@ -103,4 +103,3 @@ private:
 	std::vector<Inode> pending_inodes_;
 	uint64_t pending_bytes_ = 0;
 };
-

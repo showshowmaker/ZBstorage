@@ -24,7 +24,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=mysecurepassword
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,jdbranham-diagram-panel
     volumes:
       - /docker/grafana/data:/var/lib/grafana
       - /docker/grafana/config:/etc/grafana # 挂载 Grafana 配置文件
