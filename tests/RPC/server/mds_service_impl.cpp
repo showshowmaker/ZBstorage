@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "../../proto/mds.pb.h"
+#include "mds.pb.h"
 #include "../../../src/mds/server/Server.h"
 #include "../../../src/fs/volume/VolumeRegistry.h"
 

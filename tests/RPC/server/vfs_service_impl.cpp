@@ -7,9 +7,9 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include "../../proto/vfs.pb.h"
-#include "../../proto/mds.pb.h"
-#include "../../proto/storage.pb.h"
+#include "vfs.pb.h"
+#include "mds.pb.h"
+#include "storage.pb.h"
 #include "../../../src/mds/inode/InodeTimestamp.h"
 #include "../../../src/fs/handle/handle.h"
 

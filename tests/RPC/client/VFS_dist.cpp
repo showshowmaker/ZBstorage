@@ -6,8 +6,8 @@
 #include <memory>
 #include <string>
 #include "../../../src/fs/volume/Volume.h"
-#include "../proto/vfs.pb.h"
-#include "../proto/rpc_common.pb.h"
+#include "vfs.pb.h"
+#include "rpc_common.pb.h"
 #include "../../../src/mds/inode/inode.h"
 #include <cstdio>
 

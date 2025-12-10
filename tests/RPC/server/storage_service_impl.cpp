@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "../../proto/storage.pb.h"
+#include "storage.pb.h"
 #include "../../../src/fs/volume/VolumeManager.h"
 #include "../../../src/fs/io/LocalStorageGateway.h"
 

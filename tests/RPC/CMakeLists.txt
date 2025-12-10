@@ -43,6 +43,7 @@ include_directories(
   ${REPO_ROOT}/src/debug
   ${REPO_ROOT}/src/srm
   ${REPO_ROOT}/third_party
+  ${CMAKE_CURRENT_BINARY_DIR}  # for generated *.pb.h
 )
 
 set(COMMON_SRCS
