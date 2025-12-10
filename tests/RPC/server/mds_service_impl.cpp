@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <iostream>
 #include "mds.pb.h"
 #include "../../../src/mds/server/Server.h"
 #include "../../../src/fs/volume/VolumeRegistry.h"
@@ -14,6 +15,13 @@ DEFINE_string(mds_data_dir, "/tmp/mds_rpc", "Base dir for inode/bitmap/dir_store
 DEFINE_bool(mds_create_new, true, "Create new metadata store");
 
 namespace {
+
+void LogRequest(const std::string& api, const std::string& detail, const rpc::Status* st = nullptr) {
+    std::cout << "[MDS RPC] " << api;
+    if (!detail.empty()) std::cout << " " << detail;
+    if (st) std::cout << " -> code=" << st->code() << " msg=" << st->message();
+    std::cout << std::endl;
+}
 
 rpc::Status ToStatus(bool ok, const std::string& msg = {}) {
     rpc::Status st;
@@ -68,6 +76,7 @@ public:
                     ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(mds_->CreateRoot()));
+        LogRequest("CreateRoot", "", response);
     }
 
     void Mkdir(::google::protobuf::RpcController*,
@@ -76,6 +85,7 @@ public:
                ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(mds_->Mkdir(request->path(), static_cast<mode_t>(request->mode()))));
+        LogRequest("Mkdir", request->path(), response);
     }
 
     void Rmdir(::google::protobuf::RpcController*,
@@ -84,6 +94,7 @@ public:
                ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(mds_->Rmdir(request->path())));
+        LogRequest("Rmdir", request->path(), response);
     }
 
     void CreateFile(::google::protobuf::RpcController*,
@@ -92,6 +103,7 @@ public:
                     ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(mds_->CreateFile(request->path(), static_cast<mode_t>(request->mode()))));
+        LogRequest("CreateFile", request->path(), response);
     }
 
     void RemoveFile(::google::protobuf::RpcController*,
@@ -105,6 +117,7 @@ public:
         if (ok && ino != static_cast<uint64_t>(-1)) {
             response->add_detached_inodes(ino);
         }
+        LogRequest("RemoveFile", request->path(), response->mutable_status());
     }
 
     void TruncateFile(::google::protobuf::RpcController*,
@@ -113,6 +126,7 @@ public:
                       ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(mds_->TruncateFile(request->path())));
+        LogRequest("TruncateFile", request->path(), response);
     }
 
     void Ls(::google::protobuf::RpcController*,
@@ -123,6 +137,7 @@ public:
         auto inode = mds_->FindInodeByPath(request->path());
         if (!inode || inode->file_mode.fields.file_type != static_cast<uint16_t>(FileType::Directory)) {
             response->mutable_status()->CopyFrom(ToStatus(false, "not directory"));
+            LogRequest("Ls", request->path(), response->mutable_status());
             return;
         }
         auto entries = mds_->ReadDirectoryEntries(inode);
@@ -133,6 +148,7 @@ public:
             d->set_name(std::string(e.name, e.name + e.name_len));
         }
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("Ls", request->path(), response->mutable_status());
     }
 
     void LookupIno(::google::protobuf::RpcController*,
@@ -143,6 +159,7 @@ public:
         uint64_t ino = mds_->LookupIno(request->path());
         response->set_inode(ino);
         response->mutable_status()->CopyFrom(ToStatus(ino != static_cast<uint64_t>(-1)));
+        LogRequest("LookupIno", request->path(), response->mutable_status());
     }
 
     void FindInode(::google::protobuf::RpcController*,
@@ -153,10 +170,12 @@ public:
         auto inode = mds_->FindInodeByPath(request->path());
         if (!inode) {
             response->mutable_status()->CopyFrom(ToStatus(false, "inode not found"));
+            LogRequest("FindInode", request->path(), response->mutable_status());
             return;
         }
         SerializeInode(*inode, response->mutable_inode());
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("FindInode", request->path(), response->mutable_status());
     }
 
     void WriteInode(::google::protobuf::RpcController*,
@@ -167,6 +186,7 @@ public:
         auto inode = DeserializeInode(request->inode());
         bool ok = inode && mds_->WriteInode(request->ino(), *inode);
         response->CopyFrom(ToStatus(ok));
+        LogRequest("WriteInode", std::to_string(request->ino()), response);
     }
 
     void CollectColdInodes(::google::protobuf::RpcController*,
@@ -177,6 +197,7 @@ public:
         auto list = mds_->CollectColdInodes(request->max_candidates(), request->min_age_windows());
         for (auto ino : list) response->add_inodes(ino);
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("CollectColdInodes", "max=" + std::to_string(request->max_candidates()), response->mutable_status());
     }
 
     void CollectColdInodesBitmap(::google::protobuf::RpcController*,
@@ -196,6 +217,7 @@ public:
         response->set_bitmap(bits);
         response->set_bit_count(bitmap->size());
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("CollectColdInodesBitmap", "size=" + std::to_string(bitmap->size()), response->mutable_status());
     }
 
     void CollectColdInodesByAtimePercent(::google::protobuf::RpcController*,
@@ -206,6 +228,7 @@ public:
         auto list = mds_->CollectColdInodesByAtimePercent(request->percent());
         for (auto ino : list) response->add_inodes(ino);
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("CollectColdInodesByAtimePercent", "percent=" + std::to_string(request->percent()), response->mutable_status());
     }
 
     void RegisterVolume(::google::protobuf::RpcController*,
@@ -221,6 +244,7 @@ public:
                                               request->persist_now());
         response->mutable_status()->CopyFrom(ToStatus(ok));
         response->set_index(ok ? index : -1);
+        LogRequest("RegisterVolume", vol ? vol->uuid() : "<null>", response->mutable_status());
     }
 
     void RebuildInodeTable(::google::protobuf::RpcController*,
@@ -230,6 +254,7 @@ public:
         brpc::ClosureGuard guard(done);
         mds_->RebuildInodeTable();
         response->CopyFrom(ToStatus(true));
+        LogRequest("RebuildInodeTable", "", response);
     }
 
 private:

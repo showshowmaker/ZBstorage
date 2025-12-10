@@ -21,6 +21,13 @@ DEFINE_string(storage_addr, "127.0.0.1:8011", "storage server address");
 
 namespace {
 
+void LogRequest(const std::string& api, const std::string& detail, const rpc::Status* st = nullptr) {
+    std::cout << "[VFS RPC] " << api;
+    if (!detail.empty()) std::cout << " " << detail;
+    if (st) std::cout << " -> code=" << st->code() << " msg=" << st->message();
+    std::cout << std::endl;
+}
+
 rpc::Status ToStatus(bool ok, const std::string& msg = {}) {
     rpc::Status st;
     st.set_code(ok ? 0 : 1);
@@ -89,6 +96,7 @@ public:
         rpc::Empty empty;
         stub.CreateRoot(&cntl, &empty, &st, nullptr);
         response->CopyFrom(st);
+        LogRequest("Startup", "", response);
     }
 
     void Shutdown(::google::protobuf::RpcController*,
@@ -97,6 +105,7 @@ public:
                   ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(true));
+        LogRequest("Shutdown", "", response);
     }
 
     void CreateRootDirectory(::google::protobuf::RpcController* controller,
@@ -114,6 +123,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.Mkdir(&cntl, request, response, nullptr);
+        LogRequest("Mkdir", request->path(), response);
     }
 
     void Rmdir(::google::protobuf::RpcController*,
@@ -124,6 +134,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.Rmdir(&cntl, request, response, nullptr);
+        LogRequest("Rmdir", request->path(), response);
     }
 
     void Ls(::google::protobuf::RpcController*,
@@ -139,6 +150,7 @@ public:
                 std::cout << e.name() << std::endl;
             }
         }
+        LogRequest("Ls", request->path(), response->mutable_status());
     }
 
     void LookupInode(::google::protobuf::RpcController*,
@@ -149,6 +161,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.LookupIno(&cntl, request, response, nullptr);
+        LogRequest("LookupInode", request->path(), response->mutable_status());
     }
 
     void CreateFile(::google::protobuf::RpcController*,
@@ -159,6 +172,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.CreateFile(&cntl, request, response, nullptr);
+        LogRequest("CreateFile", request->path(), response);
     }
 
     void RemoveFile(::google::protobuf::RpcController*,
@@ -174,6 +188,7 @@ public:
             force_close_handles(ino);
         }
         response->CopyFrom(reply.status());
+        LogRequest("RemoveFile", request->path(), response);
     }
 
     void RegisterVolume(::google::protobuf::RpcController*,
@@ -196,6 +211,7 @@ public:
             response->mutable_status()->set_code(1);
             response->mutable_status()->set_message("register volume failed");
         }
+        LogRequest("RegisterVolume", "type=" + std::to_string(request->type()), response->mutable_status());
     }
 
     void Open(::google::protobuf::RpcController*,
@@ -218,6 +234,7 @@ public:
         }
         response->set_bytes(fd);
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("Open", request->path() + " flags=" + std::to_string(request->flags()), response->mutable_status());
     }
 
     void Close(::google::protobuf::RpcController*,
@@ -226,6 +243,7 @@ public:
                ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(shutdown_fd(request->fd()) == 0));
+        LogRequest("Close", "fd=" + std::to_string(request->fd()), response);
     }
 
     void ShutdownFd(::google::protobuf::RpcController*,
@@ -234,6 +252,7 @@ public:
                     ::google::protobuf::Closure* done) override {
         brpc::ClosureGuard guard(done);
         response->CopyFrom(ToStatus(shutdown_fd(request->fd()) == 0));
+        LogRequest("ShutdownFd", "fd=" + std::to_string(request->fd()), response);
     }
 
     void Seek(::google::protobuf::RpcController*,
@@ -244,6 +263,7 @@ public:
         off_t off = seek_fd(request->fd(), request->offset(), request->whence());
         response->set_offset(off);
         response->mutable_status()->CopyFrom(ToStatus(off >= 0));
+        LogRequest("Seek", "fd=" + std::to_string(request->fd()) + " off=" + std::to_string(request->offset()), response->mutable_status());
     }
 
     void Write(::google::protobuf::RpcController*,
@@ -256,6 +276,7 @@ public:
                                  request->data().size());
         response->set_bytes(bytes);
         response->mutable_status()->CopyFrom(ToStatus(bytes >= 0));
+        LogRequest("Write", "fd=" + std::to_string(request->fd()) + " bytes=" + std::to_string(bytes), response->mutable_status());
     }
 
     void Read(::google::protobuf::RpcController*,
@@ -271,6 +292,7 @@ public:
             response->set_data(buf.data(), static_cast<size_t>(bytes));
         }
         response->mutable_status()->CopyFrom(ToStatus(bytes >= 0));
+        LogRequest("Read", "fd=" + std::to_string(request->fd()) + " bytes=" + std::to_string(bytes), response->mutable_status());
     }
 
     void CollectColdInodes(::google::protobuf::RpcController*,
@@ -281,6 +303,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.CollectColdInodes(&cntl, request, response, nullptr);
+        LogRequest("CollectColdInodes", "max=" + std::to_string(request->max_candidates()), response->mutable_status());
     }
 
     void CollectColdInodesBitmap(::google::protobuf::RpcController*,
@@ -291,6 +314,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.CollectColdInodesBitmap(&cntl, request, response, nullptr);
+        LogRequest("CollectColdInodesBitmap", "", response->mutable_status());
     }
 
     void CollectColdInodesByAtimePercent(::google::protobuf::RpcController*,
@@ -301,6 +325,7 @@ public:
         rpc::MdsService_Stub stub(&mds_channel_);
         brpc::Controller cntl;
         stub.CollectColdInodesByAtimePercent(&cntl, request, response, nullptr);
+        LogRequest("CollectColdInodesByAtimePercent", "percent=" + std::to_string(request->percent()), response->mutable_status());
     }
 
 private:

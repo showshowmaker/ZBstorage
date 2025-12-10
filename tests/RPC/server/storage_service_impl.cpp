@@ -3,15 +3,24 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <iostream>
 #include "storage.pb.h"
 #include "../../../src/fs/volume/VolumeManager.h"
 #include "../../../src/fs/io/LocalStorageGateway.h"
+#include "../../../src/srm/storage_manager/StorageResource.h"
 
 DEFINE_int32(storage_port, 8011, "Port of storage server");
 DEFINE_int32(storage_idle_timeout, -1, "Idle timeout of storage server");
 DEFINE_int32(storage_thread_num, 4, "Worker threads");
 
 namespace {
+
+void LogRequest(const std::string& api, const std::string& detail, const rpc::Status* st = nullptr) {
+    std::cout << "[Storage RPC] " << api;
+    if (!detail.empty()) std::cout << " " << detail;
+    if (st) std::cout << " -> code=" << st->code() << " msg=" << st->message();
+    std::cout << std::endl;
+}
 
 rpc::Status ToStatus(bool ok, const std::string& msg = {}) {
     rpc::Status st;
@@ -47,6 +56,8 @@ std::shared_ptr<Volume> DeserializeVolume(const rpc::VolumeBlob& blob) {
 class StorageServiceImpl : public rpc::StorageService {
 public:
     StorageServiceImpl() {
+        // Ensure global storage resource is visible to LocalStorageGateway before any IO.
+        g_storage_resource = &resource_;
         volume_manager_ = std::make_shared<VolumeManager>();
         volume_manager_->set_default_gateway(std::make_shared<LocalStorageGateway>());
     }
@@ -59,10 +70,12 @@ public:
         auto vol = DeserializeVolume(request->volume());
         if (!vol) {
             response->CopyFrom(ToStatus(false, "volume deserialize failed"));
+            LogRequest("RegisterVolume", "<null>", response);
             return;
         }
         volume_manager_->register_volume(vol);
         response->CopyFrom(ToStatus(true));
+        LogRequest("RegisterVolume", vol->uuid(), response);
     }
 
     void WriteFile(::google::protobuf::RpcController*,
@@ -73,6 +86,7 @@ public:
         auto inode = DeserializeInode(request->inode());
         if (!inode) {
             response->mutable_status()->CopyFrom(ToStatus(false, "inode deserialize failed"));
+            LogRequest("WriteFile", "inode deserialize failed", response->mutable_status());
             return;
         }
         ssize_t bytes = volume_manager_->write_file(inode,
@@ -82,11 +96,13 @@ public:
         if (bytes < 0) {
             response->mutable_status()->CopyFrom(ToStatus(false, "write failed"));
             response->set_bytes(bytes);
+            LogRequest("WriteFile", "offset=" + std::to_string(request->offset()), response->mutable_status());
             return;
         }
         response->set_bytes(bytes);
         SerializeInode(*inode, response->mutable_inode());
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("WriteFile", "offset=" + std::to_string(request->offset()) + " bytes=" + std::to_string(bytes), response->mutable_status());
     }
 
     void ReadFile(::google::protobuf::RpcController*,
@@ -97,6 +113,7 @@ public:
         auto inode = DeserializeInode(request->inode());
         if (!inode) {
             response->mutable_status()->CopyFrom(ToStatus(false, "inode deserialize failed"));
+            LogRequest("ReadFile", "inode deserialize failed", response->mutable_status());
             return;
         }
         std::string buf(request->data().size(), '\0');
@@ -107,12 +124,14 @@ public:
         if (bytes < 0) {
             response->mutable_status()->CopyFrom(ToStatus(false, "read failed"));
             response->set_bytes(bytes);
+            LogRequest("ReadFile", "offset=" + std::to_string(request->offset()), response->mutable_status());
             return;
         }
         response->set_bytes(bytes);
         response->set_data(buf.data(), static_cast<size_t>(bytes));
         SerializeInode(*inode, response->mutable_inode());
         response->mutable_status()->CopyFrom(ToStatus(true));
+        LogRequest("ReadFile", "offset=" + std::to_string(request->offset()) + " bytes=" + std::to_string(bytes), response->mutable_status());
     }
 
     void ReleaseInodeBlocks(::google::protobuf::RpcController*,
@@ -123,10 +142,12 @@ public:
         auto inode = DeserializeInode(*request);
         bool ok = inode && volume_manager_->release_inode_blocks(inode);
         response->CopyFrom(ToStatus(ok));
+        LogRequest("ReleaseInodeBlocks", inode ? std::to_string(inode->inode) : "<null>", response);
     }
 
 private:
     std::shared_ptr<VolumeManager> volume_manager_;
+    StorageResource resource_;
 };
 
 int main(int argc, char* argv[]) {
