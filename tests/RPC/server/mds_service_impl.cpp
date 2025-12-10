@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include <iostream>
 #include "mds.pb.h"
 #include "../../../src/mds/server/Server.h"
@@ -63,9 +64,12 @@ class MdsServiceImpl : public rpc::MdsService {
 public:
     MdsServiceImpl(const std::string& base_dir, bool create_new)
         : base_dir_(base_dir) {
+        std::error_code ec;
+        std::filesystem::create_directories(base_dir_, ec);
         const std::string inode_path = base_dir_ + "/inode.dat";
         const std::string bitmap_path = base_dir_ + "/bitmap.dat";
         const std::string dir_store = base_dir_ + "/dir_store";
+        std::filesystem::create_directories(dir_store, ec);
         mds_ = std::make_shared<MdsServer>(inode_path, bitmap_path, dir_store, create_new);
         mds_->set_volume_registry(make_file_volume_registry(base_dir_));
     }
