@@ -60,13 +60,14 @@ int main(int argc, char** argv) {
 
     rpc::Empty empty;
     rpc::Status st;
+    bool all_ok = true;
     brpc::Controller c0;
     stub.Startup(&c0, &empty, &st, nullptr);
-    if (!expect(st.code() == 0, "startup")) return 1;
+    all_ok = expect(st.code() == 0, "startup") && all_ok;
 
     brpc::Controller c1;
     stub.CreateRootDirectory(&c1, &empty, &st, nullptr);
-    if (!expect(st.code() == 0, "create_root_directory")) return 2;
+    all_ok = expect(st.code() == 0, "create_root_directory") && all_ok;
 
     // mkdir /test
     rpc::PathModeRequest pmk;
@@ -74,37 +75,37 @@ int main(int argc, char** argv) {
     pmk.set_mode(0755);
     brpc::Controller c2;
     stub.Mkdir(&c2, &pmk, &st, nullptr);
-    if (!expect(st.code() == 0, "mkdir /test")) return 4;
+    all_ok = expect(st.code() == 0, "mkdir /test") && all_ok;
     rpc::PathRequest pls;
     pls.set_path("/");
     rpc::DirectoryListReply ls_reply;
     brpc::Controller c3;
     stub.Ls(&c3, &pls, &ls_reply, nullptr);
-    if (!expect(ls_reply.status().code() == 0, "ls root")) return 5;
+    all_ok = expect(ls_reply.status().code() == 0, "ls root") && all_ok;
     rpc::LookupReply lookup;
     rpc::PathRequest plook;
     plook.set_path("/test");
     brpc::Controller c4;
     stub.LookupInode(&c4, &plook, &lookup, nullptr);
-    if (!expect(lookup.inode() != static_cast<uint64_t>(-1), "lookup_inode test")) return 6;
+    all_ok = expect(lookup.inode() != static_cast<uint64_t>(-1), "lookup_inode test") && all_ok;
     rpc::PathRequest prmdir;
     prmdir.set_path("/test");
     brpc::Controller c5;
     stub.Rmdir(&c5, &prmdir, &st, nullptr);
-    if (!expect(st.code() == 0, "rmdir /test")) return 7;
+    all_ok = expect(st.code() == 0, "rmdir /test") && all_ok;
 
     rpc::PathModeRequest pmkdir;
     pmkdir.set_path("/io");
     pmkdir.set_mode(0755);
     brpc::Controller c6;
     stub.Mkdir(&c6, &pmkdir, &st, nullptr);
-    if (!expect(st.code() == 0, "mkdir /io")) return 8;
+    all_ok = expect(st.code() == 0, "mkdir /io") && all_ok;
     rpc::PathModeRequest pcreate;
     pcreate.set_path("/io/data.bin");
     pcreate.set_mode(0644);
     brpc::Controller c7;
     stub.CreateFile(&c7, &pcreate, &st, nullptr);
-    if (!expect(st.code() == 0, "create_file data")) return 9;
+    all_ok = expect(st.code() == 0, "create_file data") && all_ok;
 
     rpc::OpenRequest open_req;
     open_req.set_path("/io/data.bin");
@@ -114,7 +115,7 @@ int main(int argc, char** argv) {
     brpc::Controller c8;
     stub.Open(&c8, &open_req, &open_reply, nullptr);
     int fd = static_cast<int>(open_reply.bytes());
-    if (!expect(fd >= 0, "open data")) return 10;
+    all_ok = expect(fd >= 0, "open data") && all_ok;
 
     const std::string payload = "hello vfs_new";
     rpc::IORequestFD wreq;
@@ -123,7 +124,7 @@ int main(int argc, char** argv) {
     rpc::IOReplyFD wrep;
     brpc::Controller c9;
     stub.Write(&c9, &wreq, &wrep, nullptr);
-    if (!expect(wrep.bytes() == static_cast<ssize_t>(payload.size()), "write payload")) return 11;
+    all_ok = expect(wrep.bytes() == static_cast<ssize_t>(payload.size()), "write payload") && all_ok;
 
     rpc::SeekRequest sreq;
     sreq.set_fd(fd);
@@ -132,7 +133,7 @@ int main(int argc, char** argv) {
     rpc::SeekReply srep;
     brpc::Controller c10;
     stub.Seek(&c10, &sreq, &srep, nullptr);
-    if (!expect(srep.offset() == 0, "seek begin")) return 12;
+    all_ok = expect(srep.offset() == 0, "seek begin") && all_ok;
 
     rpc::IORequestFD rreq;
     rreq.set_fd(fd);
@@ -140,21 +141,21 @@ int main(int argc, char** argv) {
     rpc::IOReplyFD rrep;
     brpc::Controller c11;
     stub.Read(&c11, &rreq, &rrep, nullptr);
-    if (!expect(rrep.bytes() == static_cast<ssize_t>(payload.size()), "read payload")) return 13;
+    all_ok = expect(rrep.bytes() == static_cast<ssize_t>(payload.size()), "read payload") && all_ok;
 
     rpc::FdRequest fdreq;
     fdreq.set_fd(fd);
     rpc::Status stclose;
     brpc::Controller c12;
     stub.Close(&c12, &fdreq, &stclose, nullptr);
-    if (!expect(stclose.code() == 0, "close fd")) return 14;
+    all_ok = expect(stclose.code() == 0, "close fd") && all_ok;
 
     rpc::PathModeRequest keep_create;
     keep_create.set_path("/io/keep.bin");
     keep_create.set_mode(0644);
     brpc::Controller c13;
     stub.CreateFile(&c13, &keep_create, &st, nullptr);
-    if (!expect(st.code() == 0, "create keep")) return 15;
+    all_ok = expect(st.code() == 0, "create keep") && all_ok;
 
     rpc::OpenRequest keep_open;
     keep_open.set_path("/io/keep.bin");
@@ -164,7 +165,7 @@ int main(int argc, char** argv) {
     brpc::Controller c14;
     stub.Open(&c14, &keep_open, &keep_open_reply, nullptr);
     int keep_fd = static_cast<int>(keep_open_reply.bytes());
-    if (!expect(keep_fd >= 0, "open keep")) return 16;
+    all_ok = expect(keep_fd >= 0, "open keep") && all_ok;
 
     rpc::IORequestFD keep_wreq;
     keep_wreq.set_fd(keep_fd);
@@ -172,14 +173,14 @@ int main(int argc, char** argv) {
     rpc::IOReplyFD keep_wrep;
     brpc::Controller c15;
     stub.Write(&c15, &keep_wreq, &keep_wrep, nullptr);
-    if (!expect(keep_wrep.bytes() == 3, "write keep")) return 17;
+    all_ok = expect(keep_wrep.bytes() == 3, "write keep") && all_ok;
 
     rpc::PathRequest prem;
     prem.set_path("/io/keep.bin");
     rpc::Status strem;
     brpc::Controller c16;
     stub.RemoveFile(&c16, &prem, &strem, nullptr);
-    if (!expect(strem.code() == 0, "remove keep")) return 18;
+    all_ok = expect(strem.code() == 0, "remove keep") && all_ok;
 
     rpc::IORequestFD keep_rreq;
     keep_rreq.set_fd(keep_fd);
@@ -187,21 +188,21 @@ int main(int argc, char** argv) {
     rpc::IOReplyFD keep_rrep;
     brpc::Controller c17;
     stub.Read(&c17, &keep_rreq, &keep_rrep, nullptr);
-    if (!expect(keep_rrep.bytes() == -1, "read after remove should fail")) return 19;
+    all_ok = expect(keep_rrep.bytes() == -1, "read after remove should fail") && all_ok;
 
     rpc::FdRequest fdreq2;
     fdreq2.set_fd(keep_fd);
     rpc::Status stc2;
     brpc::Controller c18;
     stub.Close(&c18, &fdreq2, &stc2, nullptr);
-    if (!expect(stc2.code() != 0, "close already removed fd")) return 20;
+    all_ok = expect(stc2.code() != 0, "close already removed fd") && all_ok;
 
     rpc::PathModeRequest temp_create;
     temp_create.set_path("/io/temp.bin");
     temp_create.set_mode(0644);
     brpc::Controller c19;
     stub.CreateFile(&c19, &temp_create, &st, nullptr);
-    if (!expect(st.code() == 0, "create temp")) return 21;
+    all_ok = expect(st.code() == 0, "create temp") && all_ok;
     rpc::OpenRequest temp_open;
     temp_open.set_path("/io/temp.bin");
     temp_open.set_flags(MO_RDWR);
@@ -210,20 +211,20 @@ int main(int argc, char** argv) {
     brpc::Controller c20;
     stub.Open(&c20, &temp_open, &temp_open_reply, nullptr);
     int temp_fd = static_cast<int>(temp_open_reply.bytes());
-    if (!expect(temp_fd >= 0, "open temp")) return 22;
+    all_ok = expect(temp_fd >= 0, "open temp") && all_ok;
     rpc::FdRequest temp_sd;
     temp_sd.set_fd(temp_fd);
     rpc::Status stsd;
     brpc::Controller c21;
     stub.ShutdownFd(&c21, &temp_sd, &stsd, nullptr);
-    if (!expect(stsd.code() == 0, "shutdown_fd")) return 23;
+    all_ok = expect(stsd.code() == 0, "shutdown_fd") && all_ok;
     rpc::IORequestFD temp_rreq;
     temp_rreq.set_fd(temp_fd);
     temp_rreq.set_data(std::string(4, '\0'));
     rpc::IOReplyFD temp_rrep;
     brpc::Controller c22;
     stub.Read(&c22, &temp_rreq, &temp_rrep, nullptr);
-    if (!expect(temp_rrep.bytes() == -1, "read after shutdown_fd")) return 24;
+    all_ok = expect(temp_rrep.bytes() == -1, "read after shutdown_fd") && all_ok;
 
     rpc::ColdInodeRequest cold_req;
     cold_req.set_max_candidates(10);
@@ -231,13 +232,13 @@ int main(int argc, char** argv) {
     rpc::ColdInodeListReply cold_list;
     brpc::Controller c23;
     stub.CollectColdInodes(&c23, &cold_req, &cold_list, nullptr);
-    if (!expect(cold_list.inodes_size() <= 10, "collect_cold_inodes bound")) return 25;
+    all_ok = expect(cold_list.inodes_size() <= 10, "collect_cold_inodes bound") && all_ok;
     rpc::ColdInodeBitmapRequest cold_breq;
     cold_breq.set_min_age_windows(1);
     rpc::ColdInodeBitmapReply cold_brep;
     brpc::Controller c24;
     stub.CollectColdInodesBitmap(&c24, &cold_breq, &cold_brep, nullptr);
-    if (!expect(cold_brep.status().code() == 0, "cold bitmap exists")) return 26;
+    all_ok = expect(cold_brep.status().code() == 0, "cold bitmap exists") && all_ok;
     auto total_bits = cold_brep.bit_count();
     if (!expect(cold_brep.bitmap().size() >= total_bits, "bitmap sized")) return 27;
     rpc::ColdInodePercentRequest cold_preq;
@@ -245,13 +246,17 @@ int main(int argc, char** argv) {
     rpc::ColdInodeListReply cold_prep;
     brpc::Controller c25;
     stub.CollectColdInodesByAtimePercent(&c25, &cold_preq, &cold_prep, nullptr);
-    if (!expect(cold_prep.inodes_size() <= total_bits, "collect by percent")) return 28;
+    all_ok = expect(cold_prep.inodes_size() <= total_bits, "collect by percent") && all_ok;
 
     rpc::Status stshut;
     brpc::Controller c26;
     stub.Shutdown(&c26, &empty, &stshut, nullptr);
-    if (!expect(stshut.code() == 0, "shutdown")) return 29;
+    all_ok = expect(stshut.code() == 0, "shutdown") && all_ok;
 
-    std::cout << "VFS_new RPC integration test passed" << std::endl;
-    return 0;
+    if (all_ok) {
+        std::cout << "VFS_new RPC integration test passed" << std::endl;
+        return 0;
+    }
+    std::cout << "VFS_new RPC integration test finished with failures" << std::endl;
+    return 1;
 }

@@ -75,16 +75,24 @@ public:
         volume_manager_ = std::make_shared<VolumeManager>();
         volume_manager_->set_default_gateway(std::make_shared<LocalStorageGateway>());
         // Initialize all node volumes once and register into VolumeManager, also cache for ListAllVolumes.
+        const size_t kMaxCachedVolumes = 16; // avoid oversized RPC payloads
         while (true) {
             auto pair = resource_.initOneNodeVolume();
             if (!pair.first && !pair.second) break;
             if (pair.first) {
                 volume_manager_->register_volume(pair.first);
-                volume_cache_.push_back({pair.first, VolumeType::SSD});
+                if (volume_cache_.size() < kMaxCachedVolumes) {
+                    volume_cache_.push_back({pair.first, VolumeType::SSD});
+                }
             }
             if (pair.second) {
                 volume_manager_->register_volume(pair.second);
-                volume_cache_.push_back({pair.second, VolumeType::HDD});
+                if (volume_cache_.size() < kMaxCachedVolumes) {
+                    volume_cache_.push_back({pair.second, VolumeType::HDD});
+                }
+            }
+            if (volume_cache_.size() >= kMaxCachedVolumes) {
+                break;
             }
         }
     }

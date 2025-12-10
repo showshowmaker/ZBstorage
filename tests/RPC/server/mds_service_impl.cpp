@@ -20,7 +20,13 @@ namespace {
 void LogRequest(const std::string& api, const std::string& detail, const rpc::Status* st = nullptr) {
     std::cout << "[MDS RPC] " << api;
     if (!detail.empty()) std::cout << " " << detail;
-    if (st) std::cout << " -> code=" << st->code() << " msg=" << st->message();
+    if (st) {
+        std::string msg = st->message();
+        if (msg.empty()) {
+            msg = (st->code() == 0) ? "OK" : "<no-msg>";
+        }
+        std::cout << " -> code=" << st->code() << " msg=" << msg;
+    }
     std::cout << std::endl;
 }
 
