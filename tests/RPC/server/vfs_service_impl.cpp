@@ -7,8 +7,6 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include <brpc/http_service.h>
-#include <nlohmann/json.hpp>
 #include <sstream>
 #include "vfs.pb.h"
 #include "mds.pb.h"
@@ -80,73 +78,6 @@ struct FdEntry {
     size_t offset{0};
     int flags{0};
     uint32_t ref_count{1};
-};
-
-class VfsServiceImpl;
-
-// HTTP aggregator endpoint: /metrics_vfs
-class VfsMetricsHttpService : public brpc::HttpService {
-public:
-    explicit VfsMetricsHttpService(const VfsServiceImpl* impl) : impl_(impl) {}
-
-    void default_method(google::protobuf::RpcController*,
-                        const brpc::HttpRequest* /*req*/,
-                        brpc::HttpResponse* res,
-                        google::protobuf::Closure* done) override;
-
-private:
-    const VfsServiceImpl* impl_;
-};
-
-// Prometheus text endpoint: /metrics_vfs_prom (aggregated lightweight view)
-class VfsPrometheusHttpService : public brpc::HttpService {
-public:
-    explicit VfsPrometheusHttpService(const VfsServiceImpl* impl) : impl_(impl) {}
-
-    void default_method(google::protobuf::RpcController*,
-                        const brpc::HttpRequest*,
-                        brpc::HttpResponse* res,
-                        google::protobuf::Closure* done) override {
-        brpc::ClosureGuard guard(done);
-        std::ostringstream os;
-        // Volumes via storage RPC
-        rpc::StorageService_Stub storage_stub(&impl_->storage_channel_);
-        rpc::VolumeListReply vol_reply;
-        rpc::Empty empty;
-        brpc::Controller cvol;
-        storage_stub.ListAllVolumes(&cvol, &empty, &vol_reply, nullptr);
-        os << "# HELP vfs_volume_count Volume count discovered via storage RPC\n";
-        os << "# TYPE vfs_volume_count gauge\n";
-        if (!cvol.Failed() && vol_reply.status().code() == 0) {
-            os << "vfs_volume_count " << vol_reply.volumes_size() << "\n";
-            os << "# HELP vfs_volume_bytes Volume size in bytes (sampled)\n";
-            os << "# TYPE vfs_volume_bytes gauge\n";
-            os << "# HELP vfs_volume_used_bytes Used size in bytes (sampled)\n";
-            os << "# TYPE vfs_volume_used_bytes gauge\n";
-            size_t limit = std::min<size_t>(2, vol_reply.volumes_size());
-            for (size_t i = 0; i < limit; ++i) {
-                const auto& v = vol_reply.volumes(static_cast<int>(i));
-                auto vol = DeserializeVolume(v.volume());
-                if (!vol) continue;
-                const auto& bm = vol->block_manager();
-                auto total_bytes = bm.total_blocks() * bm.block_size();
-                auto used_bytes = vol->used_blocks() * bm.block_size();
-                os << "vfs_volume_bytes{uuid=\"" << vol->uuid()
-                   << "\",type=\"" << v.type()
-                   << "\",slot=\"" << i << "\"} " << total_bytes << "\n";
-                os << "vfs_volume_used_bytes{uuid=\"" << vol->uuid()
-                   << "\",type=\"" << v.type()
-                   << "\",slot=\"" << i << "\"} " << used_bytes << "\n";
-            }
-        } else {
-            os << "vfs_volume_count 0\n";
-        }
-        res->set_content_type("text/plain");
-        res->set_body(os.str());
-    }
-
-private:
-    const VfsServiceImpl* impl_;
 };
 
 class VfsServiceImpl : public rpc::VfsService {
@@ -457,6 +388,51 @@ public:
         LogRequest("CollectColdInodesByAtimePercent", "percent=" + std::to_string(request->percent()), response->mutable_status());
     }
 
+    void GetMetricsProm(::google::protobuf::RpcController* controller,
+                        const rpc::Empty*,
+                        rpc::MetricsReply* response,
+                        ::google::protobuf::Closure* done) override {
+        brpc::ClosureGuard guard(done);
+        std::ostringstream os;
+        // Volumes via storage RPC
+        rpc::StorageService_Stub storage_stub(&storage_channel_);
+        rpc::VolumeListReply vol_reply;
+        rpc::Empty empty;
+        brpc::Controller cvol;
+        storage_stub.ListAllVolumes(&cvol, &empty, &vol_reply, nullptr);
+        os << "# HELP vfs_volume_count Volume count discovered via storage RPC\n";
+        os << "# TYPE vfs_volume_count gauge\n";
+        if (!cvol.Failed() && vol_reply.status().code() == 0) {
+            os << "vfs_volume_count " << vol_reply.volumes_size() << "\n";
+            os << "# HELP vfs_volume_bytes Volume size in bytes (sampled)\n";
+            os << "# TYPE vfs_volume_bytes gauge\n";
+            os << "# HELP vfs_volume_used_bytes Used size in bytes (sampled)\n";
+            os << "# TYPE vfs_volume_used_bytes gauge\n";
+            size_t limit = std::min<size_t>(2, vol_reply.volumes_size());
+            for (size_t i = 0; i < limit; ++i) {
+                const auto& v = vol_reply.volumes(static_cast<int>(i));
+                auto vol = DeserializeVolume(v.volume());
+                if (!vol) continue;
+                const auto& bm = vol->block_manager();
+                auto total_bytes = bm.total_blocks() * bm.block_size();
+                auto used_bytes = vol->used_blocks() * bm.block_size();
+                os << "vfs_volume_bytes{uuid=\"" << vol->uuid()
+                   << "\",type=\"" << v.type()
+                   << "\",slot=\"" << i << "\"} " << total_bytes << "\n";
+                os << "vfs_volume_used_bytes{uuid=\"" << vol->uuid()
+                   << "\",type=\"" << v.type()
+                   << "\",slot=\"" << i << "\"} " << used_bytes << "\n";
+            }
+        } else {
+            os << "vfs_volume_count 0\n";
+        }
+        response->mutable_status()->CopyFrom(ToStatus(true));
+        response->set_text(os.str());
+        if (auto* cntl = dynamic_cast<brpc::Controller*>(controller)) {
+            cntl->http_response().set_content_type("text/plain");
+        }
+    }
+
 private:
     std::shared_ptr<Inode> fetch_inode(const std::string& path, int flags, mode_t mode) {
         rpc::MdsService_Stub stub(&mds_channel_);
@@ -678,86 +654,12 @@ void VfsMetricsHttpService::default_method(google::protobuf::RpcController*,
                                            brpc::HttpResponse* res,
                                            google::protobuf::Closure* done) {
     brpc::ClosureGuard guard(done);
-    nlohmann::json out;
-
-    // Sample volumes via RPC
-    rpc::StorageService_Stub storage_stub(&impl_->storage_channel_);
-    rpc::VolumeListReply vol_reply;
-    rpc::Empty empty;
-    brpc::Controller cvol;
-    storage_stub.ListAllVolumes(&cvol, &empty, &vol_reply, nullptr);
-    nlohmann::json vols = nlohmann::json::array();
-    if (!cvol.Failed() && vol_reply.status().code() == 0) {
-        size_t limit = std::min<size_t>(2, vol_reply.volumes_size());
-        for (size_t i = 0; i < limit; ++i) {
-            const auto& v = vol_reply.volumes(static_cast<int>(i));
-            auto vol = DeserializeVolume(v.volume());
-            if (!vol) continue;
-            const auto& bm = vol->block_manager();
-            nlohmann::json item;
-            item["uuid"] = vol->uuid();
-            item["type"] = v.type();
-            item["total_bytes"] = bm.total_blocks() * bm.block_size();
-            item["used_bytes"] = vol->used_blocks() * bm.block_size();
-            vols.push_back(item);
-        }
-        out["volume_count"] = vol_reply.volumes_size();
-    } else {
-        out["volume_count"] = 0;
-    }
-    out["volumes_sample"] = vols;
-
-    // Helper to fetch JSON from HTTP endpoints
-    auto fetch_json = [](const std::string& addr, const std::string& path) -> nlohmann::json {
-        brpc::Channel ch;
-        brpc::ChannelOptions opt;
-        opt.protocol = "http";
-        if (ch.Init(addr.c_str(), &opt) != 0) {
-            return nlohmann::json();
-        }
-        brpc::Controller cntl;
-        cntl.http_request().uri() = path;
-        ch.CallMethod(nullptr, &cntl, nullptr, nullptr, nullptr);
-        if (cntl.Failed()) return nlohmann::json();
-        try {
-            return nlohmann::json::parse(cntl.response_attachment().to_string());
-        } catch (...) {
-            return nlohmann::json();
-        }
-    };
-
-    nlohmann::json storage_metrics = fetch_json(impl_->storage_addr_, "/metrics_storage");
-    nlohmann::json mds_metrics = fetch_json(impl_->mds_addr_, "/metrics_mds");
-    out["storage_metrics"] = storage_metrics;
-    out["mds_metrics"] = mds_metrics;
-    if (mds_metrics.contains("total_inodes")) {
-        out["total_inodes"] = mds_metrics["total_inodes"];
-    }
-
-    res->set_content_type("application/json");
-    res->set_body(out.dump());
-}
-
 int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     brpc::Server server;
     VfsServiceImpl svc(FLAGS_mds_addr, FLAGS_storage_addr);
     if (server.AddService(&svc, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
         std::cerr << "Failed to add vfs service" << std::endl;
-        return -1;
-    }
-    VfsMetricsHttpService metrics_http(&svc);
-    if (server.AddService(&metrics_http,
-                          brpc::SERVER_DOESNT_OWN_SERVICE,
-                          "metrics_vfs") != 0) {
-        std::cerr << "Failed to add vfs metrics service" << std::endl;
-        return -1;
-    }
-    VfsPrometheusHttpService metrics_prom(&svc);
-    if (server.AddService(&metrics_prom,
-                          brpc::SERVER_DOESNT_OWN_SERVICE,
-                          "metrics_vfs_prom") != 0) {
-        std::cerr << "Failed to add vfs prom metrics service" << std::endl;
         return -1;
     }
     brpc::ServerOptions options;

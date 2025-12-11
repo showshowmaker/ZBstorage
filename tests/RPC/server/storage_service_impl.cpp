@@ -11,8 +11,6 @@
 #include "../../../src/fs/volume/VolumeRegistry.h"
 #include "../../../src/fs/io/LocalStorageGateway.h"
 #include "../../../src/srm/storage_manager/StorageResource.h"
-#include <brpc/http_service.h>
-#include <nlohmann/json.hpp>
 
 DEFINE_int32(storage_port, 8011, "Port of storage server");
 DEFINE_int32(storage_idle_timeout, -1, "Idle timeout of storage server");
@@ -69,94 +67,6 @@ void SerializeVolume(const Volume& vol, rpc::VolumeBlob* out) {
 
 } // namespace
 
-class StorageServiceImpl;
-
-// Lightweight HTTP metrics endpoint: /metrics_storage
-class StorageMetricsHttpService : public brpc::HttpService {
-public:
-    explicit StorageMetricsHttpService(const StorageServiceImpl* impl) : impl_(impl) {}
-
-    void default_method(google::protobuf::RpcController*,
-                        const brpc::HttpRequest* /*req*/,
-                        brpc::HttpResponse* res,
-                        google::protobuf::Closure* done) override;
-
-private:
-    const StorageServiceImpl* impl_;
-};
-
-// Prometheus text endpoint: /metrics_storage_prom
-class StoragePrometheusHttpService : public brpc::HttpService {
-public:
-    explicit StoragePrometheusHttpService(const StorageServiceImpl* impl) : impl_(impl) {}
-
-    void default_method(google::protobuf::RpcController*,
-                        const brpc::HttpRequest* /*req*/,
-                        brpc::HttpResponse* res,
-                        google::protobuf::Closure* done) override {
-        brpc::ClosureGuard guard(done);
-        std::ostringstream os;
-        const auto& cache = impl_->volume_cache_;
-        os << "# HELP storage_volume_count Total volumes cached\n";
-        os << "# TYPE storage_volume_count gauge\n";
-        os << "storage_volume_count " << cache.size() << "\n";
-        os << "# HELP storage_volume_bytes Volume size in bytes (sampled)\n";
-        os << "# TYPE storage_volume_bytes gauge\n";
-        os << "# HELP storage_volume_used_bytes Used size in bytes (sampled)\n";
-        os << "# TYPE storage_volume_used_bytes gauge\n";
-        for (size_t i = 0; i < cache.size() && i < 2; ++i) {
-            const auto& v = cache[i];
-            const auto& bm = v.volume->block_manager();
-            auto total_bytes = bm.total_blocks() * bm.block_size();
-            auto used_bytes = v.volume->used_blocks() * bm.block_size();
-            os << "storage_volume_bytes{uuid=\"" << v.volume->uuid()
-               << "\",type=\"" << static_cast<uint32_t>(v.type)
-               << "\",slot=\"" << i << "\"} " << total_bytes << "\n";
-            os << "storage_volume_used_bytes{uuid=\"" << v.volume->uuid()
-               << "\",type=\"" << static_cast<uint32_t>(v.type)
-               << "\",slot=\"" << i << "\"} " << used_bytes << "\n";
-        }
-
-        os << "# HELP storage_node_count Total storage nodes\n";
-        os << "# TYPE storage_node_count gauge\n";
-        os << "storage_node_count " << impl_->resource_.nodes.size() << "\n";
-        os << "# HELP storage_node_capacity_bytes Node capacity per tier (sampled)\n";
-        os << "# TYPE storage_node_capacity_bytes gauge\n";
-        for (size_t i = 0; i < impl_->resource_.nodes.size() && i < 2; ++i) {
-            const auto& n = impl_->resource_.nodes[i];
-            uint64_t ssd_bytes = 0;
-            uint64_t hdd_bytes = 0;
-            if (n->ssd_volume) {
-                const auto& bm = n->ssd_volume->block_manager();
-                ssd_bytes = bm.total_blocks() * bm.block_size();
-            }
-            if (n->hdd_volume) {
-                const auto& bm = n->hdd_volume->block_manager();
-                hdd_bytes = bm.total_blocks() * bm.block_size();
-            }
-            os << "storage_node_capacity_bytes{id=\"" << n->node_id
-               << "\",tier=\"ssd\",slot=\"" << i << "\"} " << ssd_bytes << "\n";
-            os << "storage_node_capacity_bytes{id=\"" << n->node_id
-               << "\",tier=\"hdd\",slot=\"" << i << "\"} " << hdd_bytes << "\n";
-        }
-
-        os << "# HELP storage_library_count Optical libraries count\n";
-        os << "# TYPE storage_library_count gauge\n";
-        os << "storage_library_count " << impl_->resource_.libraries.size() << "\n";
-        os << "# HELP storage_library_disc_count Optical library disc count (sampled)\n";
-        os << "# TYPE storage_library_disc_count gauge\n";
-        for (size_t i = 0; i < impl_->resource_.libraries.size() && i < 2; ++i) {
-            const auto& lib = impl_->resource_.libraries[i];
-            os << "storage_library_disc_count{id=\"" << lib->library_id
-               << "\",slot=\"" << i << "\"} " << lib->disc_num << "\n";
-        }
-        res->set_content_type("text/plain");
-        res->set_body(os.str());
-    }
-
-private:
-    const StorageServiceImpl* impl_;
-};
 
 class StorageServiceImpl : public rpc::StorageService {
 public:
@@ -290,8 +200,12 @@ public:
         LogRequest("ReleaseInodeBlocks", inode ? std::to_string(inode->inode) : "<null>", response);
     }
 
+    void GetMetricsProm(::google::protobuf::RpcController* controller,
+                        const rpc::Empty*,
+                        rpc::MetricsReply* response,
+                        ::google::protobuf::Closure* done) override;
+
 private:
-    friend class StorageMetricsHttpService;
     std::shared_ptr<VolumeManager> volume_manager_;
     StorageResource resource_;
     struct VolumeCacheEntry {
@@ -301,35 +215,40 @@ private:
     std::vector<VolumeCacheEntry> volume_cache_;
 };
 
-void StorageMetricsHttpService::default_method(google::protobuf::RpcController*,
-                                               const brpc::HttpRequest*,
-                                               brpc::HttpResponse* res,
-                                               google::protobuf::Closure* done) {
+void StorageServiceImpl::GetMetricsProm(::google::protobuf::RpcController* controller,
+                                        const rpc::Empty*,
+                                        rpc::MetricsReply* response,
+                                        ::google::protobuf::Closure* done) {
     brpc::ClosureGuard guard(done);
-    nlohmann::json j;
-    // Volumes
-    nlohmann::json vols = nlohmann::json::array();
-    const auto& cache = impl_->volume_cache_;
+    std::ostringstream os;
+    const auto& cache = volume_cache_;
+    os << "# HELP storage_volume_count Total volumes cached\n";
+    os << "# TYPE storage_volume_count gauge\n";
+    os << "storage_volume_count " << cache.size() << "\n";
+    os << "# HELP storage_volume_bytes Volume size in bytes (sampled)\n";
+    os << "# TYPE storage_volume_bytes gauge\n";
+    os << "# HELP storage_volume_used_bytes Used size in bytes (sampled)\n";
+    os << "# TYPE storage_volume_used_bytes gauge\n";
     for (size_t i = 0; i < cache.size() && i < 2; ++i) {
         const auto& v = cache[i];
         const auto& bm = v.volume->block_manager();
-        nlohmann::json item;
-        item["uuid"] = v.volume->uuid();
-        item["type"] = static_cast<uint32_t>(v.type);
-        item["total_bytes"] = bm.total_blocks() * bm.block_size();
-        item["used_bytes"] = v.volume->used_blocks() * bm.block_size();
-        vols.push_back(item);
+        auto total_bytes = bm.total_blocks() * bm.block_size();
+        auto used_bytes = v.volume->used_blocks() * bm.block_size();
+        os << "storage_volume_bytes{uuid=\"" << v.volume->uuid()
+           << "\",type=\"" << static_cast<uint32_t>(v.type)
+           << "\",slot=\"" << i << "\"} " << total_bytes << "\n";
+        os << "storage_volume_used_bytes{uuid=\"" << v.volume->uuid()
+           << "\",type=\"" << static_cast<uint32_t>(v.type)
+           << "\",slot=\"" << i << "\"} " << used_bytes << "\n";
     }
-    j["volume_count"] = cache.size();
-    j["volumes_sample"] = vols;
 
-    // Storage nodes
-    nlohmann::json nodes = nlohmann::json::array();
-    for (size_t i = 0; i < impl_->resource_.nodes.size() && i < 2; ++i) {
-        const auto& n = impl_->resource_.nodes[i];
-        nlohmann::json item;
-        item["id"] = n->node_id;
-        item["type"] = static_cast<int>(n->type);
+    os << "# HELP storage_node_count Total storage nodes\n";
+    os << "# TYPE storage_node_count gauge\n";
+    os << "storage_node_count " << resource_.nodes.size() << "\n";
+    os << "# HELP storage_node_capacity_bytes Node capacity per tier (sampled)\n";
+    os << "# TYPE storage_node_capacity_bytes gauge\n";
+    for (size_t i = 0; i < resource_.nodes.size() && i < 2; ++i) {
+        const auto& n = resource_.nodes[i];
         uint64_t ssd_bytes = 0;
         uint64_t hdd_bytes = 0;
         if (n->ssd_volume) {
@@ -340,39 +259,27 @@ void StorageMetricsHttpService::default_method(google::protobuf::RpcController*,
             const auto& bm = n->hdd_volume->block_manager();
             hdd_bytes = bm.total_blocks() * bm.block_size();
         }
-        item["ssd_capacity_bytes"] = ssd_bytes;
-        item["hdd_capacity_bytes"] = hdd_bytes;
-        nodes.push_back(item);
+        os << "storage_node_capacity_bytes{id=\"" << n->node_id
+           << "\",tier=\"ssd\",slot=\"" << i << "\"} " << ssd_bytes << "\n";
+        os << "storage_node_capacity_bytes{id=\"" << n->node_id
+           << "\",tier=\"hdd\",slot=\"" << i << "\"} " << hdd_bytes << "\n";
     }
-    j["node_count"] = impl_->resource_.nodes.size();
-    j["nodes_sample"] = nodes;
 
-    // Optical libraries
-    nlohmann::json libs = nlohmann::json::array();
-    for (size_t i = 0; i < impl_->resource_.libraries.size() && i < 2; ++i) {
-        const auto& lib = impl_->resource_.libraries[i];
-        nlohmann::json item;
-        item["id"] = lib->library_id;
-        item["disc_count"] = lib->disc_num;
-        item["missing_slots"] = lib->miss_slots.size();
-        // disc samples from non_default_discs map if any
-        nlohmann::json discs = nlohmann::json::array();
-        size_t added = 0;
-        for (const auto& kv : lib->non_default_discs) {
-            nlohmann::json d;
-            d["slot"] = kv.first;
-            d["disc_id"] = kv.second;
-            discs.push_back(d);
-            if (++added >= 2) break;
-        }
-        item["discs_sample"] = discs;
-        libs.push_back(item);
+    os << "# HELP storage_library_count Optical libraries count\n";
+    os << "# TYPE storage_library_count gauge\n";
+    os << "storage_library_count " << resource_.libraries.size() << "\n";
+    os << "# HELP storage_library_disc_count Optical library disc count (sampled)\n";
+    os << "# TYPE storage_library_disc_count gauge\n";
+    for (size_t i = 0; i < resource_.libraries.size() && i < 2; ++i) {
+        const auto& lib = resource_.libraries[i];
+        os << "storage_library_disc_count{id=\"" << lib->library_id
+           << "\",slot=\"" << i << "\"} " << lib->disc_num << "\n";
     }
-    j["library_count"] = impl_->resource_.libraries.size();
-    j["libraries_sample"] = libs;
-
-    res->set_content_type("application/json");
-    res->set_body(j.dump());
+    response->mutable_status()->CopyFrom(ToStatus(true));
+    response->set_text(os.str());
+    if (auto* cntl = dynamic_cast<brpc::Controller*>(controller)) {
+        cntl->http_response().set_content_type("text/plain");
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -381,20 +288,6 @@ int main(int argc, char* argv[]) {
     StorageServiceImpl svc;
     if (server.AddService(&svc, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
         std::cerr << "Failed to add storage service" << std::endl;
-        return -1;
-    }
-    StorageMetricsHttpService metrics_http(&svc);
-    if (server.AddService(&metrics_http,
-                          brpc::SERVER_DOESNT_OWN_SERVICE,
-                          "metrics_storage") != 0) {
-        std::cerr << "Failed to add storage metrics service" << std::endl;
-        return -1;
-    }
-    StoragePrometheusHttpService metrics_prom(&svc);
-    if (server.AddService(&metrics_prom,
-                          brpc::SERVER_DOESNT_OWN_SERVICE,
-                          "metrics_storage_prom") != 0) {
-        std::cerr << "Failed to add storage prom metrics service" << std::endl;
         return -1;
     }
     brpc::ServerOptions options;

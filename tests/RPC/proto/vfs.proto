@@ -58,4 +58,6 @@ service VfsService {
   rpc CollectColdInodes(ColdInodeRequest) returns (ColdInodeListReply);
   rpc CollectColdInodesBitmap(ColdInodeBitmapRequest) returns (ColdInodeBitmapReply);
   rpc CollectColdInodesByAtimePercent(ColdInodePercentRequest) returns (ColdInodeListReply);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
 }

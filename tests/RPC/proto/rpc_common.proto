@@ -6,6 +6,12 @@ message Status {
   string message = 2;
 }
 
+// Generic text payload for metrics.
+message MetricsReply {
+  Status status = 1;
+  string text = 2;
+}
+
 message DirectoryEntry {
   uint64 inode = 1;
   uint32 type = 2;

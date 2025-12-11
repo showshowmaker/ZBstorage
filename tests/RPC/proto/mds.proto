@@ -96,4 +96,6 @@ service MdsService {
   rpc CollectColdInodesByAtimePercent(ColdInodePercentRequest) returns (ColdInodeListReply);
   rpc RegisterVolume(RegisterVolumeRequest) returns (RegisterVolumeReply);
   rpc RebuildInodeTable(Empty) returns (Status);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
 }

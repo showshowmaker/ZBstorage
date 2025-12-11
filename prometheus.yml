@@ -5,21 +5,21 @@ global:
 scrape_configs:
   # brpc servers for DFS demo metrics (Prometheus text format)
   - job_name: 'mds_rpc_metrics'
-    metrics_path: /metrics_mds_prom
+    metrics_path: /rpc.MdsService/GetMetricsProm
     static_configs:
       - targets: ['127.0.0.1:8010']
         labels:
           instance: 'mds-server'
 
   - job_name: 'storage_rpc_metrics'
-    metrics_path: /metrics_storage_prom
+    metrics_path: /rpc.StorageService/GetMetricsProm
     static_configs:
       - targets: ['127.0.0.1:8011']
         labels:
           instance: 'storage-server'
 
   - job_name: 'vfs_rpc_metrics'
-    metrics_path: /metrics_vfs_prom
+    metrics_path: /rpc.VfsService/GetMetricsProm
     static_configs:
       - targets: ['127.0.0.1:8012']
         labels:

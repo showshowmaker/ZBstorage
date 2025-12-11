@@ -47,4 +47,6 @@ service StorageService {
   rpc ReleaseInodeBlocks(InodeBlob) returns (Status);
   // Enumerate volumes initialized from StorageResource (initOneNodeVolume loop)
   rpc ListAllVolumes(Empty) returns (VolumeListReply);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
 }
