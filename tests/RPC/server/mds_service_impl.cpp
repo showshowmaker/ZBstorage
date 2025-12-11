@@ -5,6 +5,10 @@
 #include <vector>
 #include <filesystem>
 #include <iostream>
+#include <algorithm>
+#include <brpc/http_service.h>
+#include <nlohmann/json.hpp>
+#include <sstream>
 #include "mds.pb.h"
 #include "../../../src/mds/server/Server.h"
 #include "../../../src/fs/volume/VolumeRegistry.h"
@@ -65,6 +69,55 @@ void SerializeVolume(const Volume& vol, rpc::VolumeBlob* out) {
 }
 
 } // namespace
+
+class MdsServiceImpl;
+
+// HTTP metrics endpoint: /metrics_mds
+class MdsMetricsHttpService : public brpc::HttpService {
+public:
+    explicit MdsMetricsHttpService(const MdsServiceImpl* impl) : impl_(impl) {}
+
+    void default_method(google::protobuf::RpcController*,
+                        const brpc::HttpRequest* /*req*/,
+                        brpc::HttpResponse* res,
+                        google::protobuf::Closure* done) override;
+
+private:
+    const MdsServiceImpl* impl_;
+};
+
+// Prometheus text endpoint: /metrics_mds_prom
+class MdsPrometheusHttpService : public brpc::HttpService {
+public:
+    explicit MdsPrometheusHttpService(const MdsServiceImpl* impl) : impl_(impl) {}
+
+    void default_method(google::protobuf::RpcController*,
+                        const brpc::HttpRequest* /*req*/,
+                        brpc::HttpResponse* res,
+                        google::protobuf::Closure* done) override {
+        brpc::ClosureGuard guard(done);
+        std::ostringstream os;
+        uint64_t total = impl_->mds_->GetTotalInodes();
+        uint64_t root = impl_->mds_->GetRootInode();
+        os << "# HELP mds_total_inodes Total inodes in MDS\n";
+        os << "# TYPE mds_total_inodes gauge\n";
+        os << "mds_total_inodes " << total << "\n";
+        os << "# HELP mds_root_inode Root inode id\n";
+        os << "# TYPE mds_root_inode gauge\n";
+        os << "mds_root_inode " << root << "\n";
+        auto list = impl_->mds_->CollectColdInodes(2, 0);
+        os << "# HELP mds_cold_inode_sample Cold inode sample (value=inode id)\n";
+        os << "# TYPE mds_cold_inode_sample gauge\n";
+        for (size_t i = 0; i < list.size(); ++i) {
+            os << "mds_cold_inode_sample{slot=\"" << i << "\"} " << list[i] << "\n";
+        }
+        res->set_content_type("text/plain");
+        res->set_body(os.str());
+    }
+
+private:
+    const MdsServiceImpl* impl_;
+};
 
 class MdsServiceImpl : public rpc::MdsService {
 public:
@@ -281,9 +334,30 @@ public:
     }
 
 private:
+    friend class MdsMetricsHttpService;
     std::string base_dir_;
     std::shared_ptr<MdsServer> mds_;
 };
+
+void MdsMetricsHttpService::default_method(google::protobuf::RpcController*,
+                                           const brpc::HttpRequest*,
+                                           brpc::HttpResponse* res,
+                                           google::protobuf::Closure* done) {
+    brpc::ClosureGuard guard(done);
+    nlohmann::json j;
+    uint64_t total = impl_->mds_->GetTotalInodes();
+    j["total_inodes"] = total;
+    // cold inode samples
+    nlohmann::json cold = nlohmann::json::array();
+    auto list = impl_->mds_->CollectColdInodes(2, 0);
+    for (auto ino : list) {
+        cold.push_back(ino);
+    }
+    j["cold_inodes_sample"] = cold;
+    j["root_inode"] = impl_->mds_->GetRootInode();
+    res->set_content_type("application/json");
+    res->set_body(j.dump());
+}
 
 int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -291,6 +365,20 @@ int main(int argc, char* argv[]) {
     MdsServiceImpl svc(FLAGS_mds_data_dir, FLAGS_mds_create_new);
     if (server.AddService(&svc, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
         std::cerr << "Failed to add mds service" << std::endl;
+        return -1;
+    }
+    MdsMetricsHttpService metrics_http(&svc);
+    if (server.AddService(&metrics_http,
+                          brpc::SERVER_DOESNT_OWN_SERVICE,
+                          "metrics_mds") != 0) {
+        std::cerr << "Failed to add mds metrics service" << std::endl;
+        return -1;
+    }
+    MdsPrometheusHttpService metrics_prom(&svc);
+    if (server.AddService(&metrics_prom,
+                          brpc::SERVER_DOESNT_OWN_SERVICE,
+                          "metrics_mds_prom") != 0) {
+        std::cerr << "Failed to add mds prom metrics service" << std::endl;
         return -1;
     }
     brpc::ServerOptions options;
