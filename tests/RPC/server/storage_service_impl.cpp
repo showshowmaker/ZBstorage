@@ -277,9 +277,16 @@ void StorageServiceImpl::GetMetricsProm(::google::protobuf::RpcController* contr
            << "\",slot=\"" << i << "\"} " << lib->disc_num << "\n";
     }
     response->mutable_status()->CopyFrom(ToStatus(true));
-    response->set_text(os.str());
+    bool handled_http = false;
     if (auto* cntl = dynamic_cast<brpc::Controller*>(controller)) {
-        cntl->http_response().set_content_type("text/plain");
+        if (cntl->has_http_request()) {
+            cntl->http_response().set_content_type("text/plain");
+            cntl->http_response().set_body(os.str());
+            handled_http = true;
+        }
+    }
+    if (!handled_http) {
+        response->set_text(os.str());
     }
 }
 
