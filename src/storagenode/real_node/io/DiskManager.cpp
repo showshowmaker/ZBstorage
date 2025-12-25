@@ -99,7 +99,13 @@ bool DiskManager::MountIfRequired() {
                 config_.fs_type.c_str(),
                 MS_RELATIME,
                 nullptr) != 0) {
-        std::cerr << "DiskManager: mount failed (" << std::strerror(errno) << ")" << std::endl;
+        int err = errno;
+        if (err == EPERM || err == EACCES) {
+            std::cerr << "DiskManager: mount skipped due to insufficient privileges ("
+                      << std::strerror(err) << "), expecting external mount" << std::endl;
+            return IsMounted();
+        }
+        std::cerr << "DiskManager: mount failed (" << std::strerror(err) << ")" << std::endl;
         return false;
     }
     return true;

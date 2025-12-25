@@ -2,7 +2,9 @@
 
 #include <brpc/closure_guard.h>
 #include <brpc/controller.h>
+#include <butil/crc32c.h>
 
+#include <fcntl.h>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -20,8 +22,11 @@ rpc::Status* Ok(rpc::Status* status) {
 } // namespace
 
 StorageServiceImpl::StorageServiceImpl(std::shared_ptr<DiskManager> disk_manager,
+                                       std::shared_ptr<LocalMetadataManager> metadata_mgr,
                                        std::shared_ptr<IOEngine> io_engine)
-    : disk_manager_(std::move(disk_manager)), io_engine_(std::move(io_engine)) {
+    : disk_manager_(std::move(disk_manager)),
+      metadata_mgr_(std::move(metadata_mgr)),
+      io_engine_(std::move(io_engine)) {
     if (disk_manager_) {
         ready_ = disk_manager_->Prepare();
     } else {
@@ -40,6 +45,10 @@ void StorageServiceImpl::Write(::google::protobuf::RpcController* controller,
         FillStatus(status, EIO, "disk not ready");
         return;
     }
+    if (!metadata_mgr_) {
+        FillStatus(status, EINVAL, "metadata manager is null");
+        return;
+    }
     if (!io_engine_) {
         FillStatus(status, EINVAL, "io engine is null");
         return;
@@ -51,10 +60,30 @@ void StorageServiceImpl::Write(::google::protobuf::RpcController* controller,
             return;
         }
     }
-    auto res = io_engine_->Write(request->chunk_id(),
+    std::string path = metadata_mgr_->GetPath(request->chunk_id());
+    if (path.empty()) {
+        path = metadata_mgr_->AllocPath(request->chunk_id());
+        if (path.empty()) {
+            FillStatus(status, EIO, "failed to allocate path");
+            return;
+        }
+    }
+
+    int flags = request->flags();
+    if (flags == 0) {
+        flags = O_WRONLY | O_CREAT;
+    }
+    if ((flags & (O_WRONLY | O_RDWR)) == 0) {
+        flags |= O_WRONLY;
+    }
+    int mode = request->mode() == 0 ? 0644 : request->mode();
+
+    auto res = io_engine_->Write(path,
                                  request->data().data(),
                                  request->data().size(),
-                                 request->offset());
+                                 request->offset(),
+                                 flags,
+                                 mode);
     if (res.bytes < 0 || res.err != 0) {
         int err = res.err != 0 ? res.err : EIO;
         FillStatus(status, err, res.err != 0 ? "" : "write failed");
@@ -75,36 +104,52 @@ void StorageServiceImpl::Read(::google::protobuf::RpcController* controller,
         FillStatus(status, EIO, "disk not ready");
         return;
     }
+    if (!metadata_mgr_) {
+        FillStatus(status, EINVAL, "metadata manager is null");
+        return;
+    }
     if (!io_engine_) {
         FillStatus(status, EINVAL, "io engine is null");
         return;
     }
 
+    std::string path = metadata_mgr_->GetPath(request->chunk_id());
+    if (path.empty()) {
+        FillStatus(status, ENOENT, "chunk not found");
+        return;
+    }
+
+    int flags = request->flags();
+    if (flags == 0) {
+        flags = O_RDONLY;
+    }
+    // ensure read-only if caller passed write flags accidentally
+    flags &= ~(O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_EXCL);
+    if ((flags & (O_RDONLY | O_WRONLY | O_RDWR)) == 0) {
+        flags |= O_RDONLY;
+    }
+
     std::string buffer;
-    auto res = io_engine_->Read(request->chunk_id(),
+    auto res = io_engine_->Read(path,
                                 request->offset(),
                                 static_cast<size_t>(request->length()),
-                                buffer);
+                                buffer,
+                                flags);
     if (res.bytes < 0 || res.err != 0) {
         int err = res.err != 0 ? res.err : EIO;
         FillStatus(status, err, res.err != 0 ? "" : "read failed");
         return;
     }
     response->set_bytes_read(static_cast<uint64_t>(res.bytes));
-    response->set_data(buffer.data(), static_cast<size_t>(res.bytes));
-    response->set_checksum(ComputeChecksum(buffer.data(), static_cast<size_t>(res.bytes)));
+    // avoid extra copy inside protobuf by swapping buffers
+    response->mutable_data()->swap(buffer);
+    response->set_checksum(ComputeChecksum(response->data().data(),
+                                           static_cast<size_t>(res.bytes)));
     Ok(status);
 }
 
 uint64_t StorageServiceImpl::ComputeChecksum(const void* data, size_t len) const {
-    const uint8_t* bytes = static_cast<const uint8_t*>(data);
-    uint64_t hash = 1469598103934665603ULL;      // FNV offset basis
-    const uint64_t prime = 1099511628211ULL;      // FNV prime
-    for (size_t i = 0; i < len; ++i) {
-        hash ^= static_cast<uint64_t>(bytes[i]);
-        hash *= prime;
-    }
-    return hash;
+    return butil::crc32c::Value(static_cast<const char*>(data), len);
 }
 
 void StorageServiceImpl::FillStatus(rpc::Status* status, int err, const std::string& message) const {

@@ -2,6 +2,7 @@
 #include <brpc/controller.h>
 #include <gflags/gflags.h>
 
+#include <fcntl.h>
 #include <iostream>
 #include <string>
 
@@ -11,6 +12,8 @@ DEFINE_string(server, "127.0.0.1:9010", "Storage real node server address");
 DEFINE_uint64(chunk_id, 1, "Chunk id to read/write");
 DEFINE_uint64(offset, 0, "Offset for read/write");
 DEFINE_string(data, "hello real node", "Data to write");
+DEFINE_int32(flags, 0, "POSIX open flags to pass through to server");
+DEFINE_int32(mode, 0644, "POSIX mode to use when creating files");
 
 static void PrintStatus(const rpc::Status& st, const std::string& api) {
     if (st.code() == 0) {
@@ -41,6 +44,8 @@ int main(int argc, char** argv) {
         req.set_offset(FLAGS_offset);
         req.set_data(FLAGS_data);
         req.set_checksum(0); // skip checksum validation
+        req.set_flags(FLAGS_flags);
+        req.set_mode(FLAGS_mode);
 
         stub.Write(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {
@@ -62,6 +67,7 @@ int main(int argc, char** argv) {
         req.set_chunk_id(FLAGS_chunk_id);
         req.set_offset(FLAGS_offset);
         req.set_length(static_cast<uint64_t>(FLAGS_data.size()));
+        req.set_flags(FLAGS_flags == 0 ? O_RDONLY : FLAGS_flags);
 
         stub.Read(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {

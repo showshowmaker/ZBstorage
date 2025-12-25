@@ -3,10 +3,12 @@
 
 #include <iostream>
 #include <memory>
+#include <vector>
 
 #include "StorageServiceImpl.h"
 #include "../io/DiskManager.h"
 #include "../io/IOEngine.h"
+#include "../meta/LocalMetadataManager.h"
 
 DEFINE_int32(port, 9010, "Port for storage real node server");
 DEFINE_string(device_path, "", "Block device path (e.g. /dev/sdb), optional if already mounted");
@@ -28,10 +30,11 @@ int main(int argc, char** argv) {
     auto disk_mgr = std::make_shared<DiskManager>(cfg);
     IOEngine::Options io_opts;
     io_opts.sync_on_write = FLAGS_sync_on_write;
-    auto io_engine = std::make_shared<IOEngine>(FLAGS_base_path.empty() ? FLAGS_mount_point : FLAGS_base_path,
-                                                io_opts);
+    std::string data_root = FLAGS_base_path.empty() ? FLAGS_mount_point : FLAGS_base_path;
+    auto io_engine = std::make_shared<IOEngine>(data_root, io_opts);
+    auto metadata_mgr = std::make_shared<LocalMetadataManager>(std::vector<std::string>{data_root});
 
-    StorageServiceImpl service(disk_mgr, io_engine);
+    StorageServiceImpl service(disk_mgr, metadata_mgr, io_engine);
 
     brpc::Server server;
     if (server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {

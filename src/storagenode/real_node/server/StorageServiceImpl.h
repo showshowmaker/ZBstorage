@@ -7,10 +7,12 @@
 #include "storage_node.pb.h"
 #include "../io/DiskManager.h"
 #include "../io/IOEngine.h"
+#include "../meta/LocalMetadataManager.h"
 
 class StorageServiceImpl : public storagenode::StorageService {
 public:
     StorageServiceImpl(std::shared_ptr<DiskManager> disk_manager,
+                       std::shared_ptr<LocalMetadataManager> metadata_mgr,
                        std::shared_ptr<IOEngine> io_engine);
 
     void Write(::google::protobuf::RpcController* controller,
@@ -28,6 +30,7 @@ private:
     void FillStatus(rpc::Status* status, int err, const std::string& message) const;
 
     std::shared_ptr<DiskManager> disk_manager_;
+    std::shared_ptr<LocalMetadataManager> metadata_mgr_;
     std::shared_ptr<IOEngine> io_engine_;
     bool ready_{false};
 };
