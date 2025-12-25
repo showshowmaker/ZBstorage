@@ -47,3 +47,6 @@ set_target_properties(zb_storagenode PROPERTIES
 # Consumers should additionally link Volume/Block libraries when creating executables that
 # instantiate or call into Volume defined in src/fs/volume/Volume.cpp. Keeping this library
 # STATIC avoids link-time resolution issues at archive creation.
+
+# Real node brpc server/client targets.
+add_subdirectory(real_node)

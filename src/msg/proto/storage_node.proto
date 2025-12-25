@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package storagenode;
+
+import "../RPC/proto/rpc_common.proto";
+
+option cc_generic_services = true;
+
+message WriteRequest {
+  uint64 chunk_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+  uint64 checksum = 4;
+}
+
+message WriteReply {
+  rpc.Status status = 1;
+  uint64 bytes_written = 2;
+}
+
+message ReadRequest {
+  uint64 chunk_id = 1;
+  uint64 offset = 2;
+  uint64 length = 3;
+}
+
+message ReadReply {
+  rpc.Status status = 1;
+  bytes data = 2;
+  uint64 bytes_read = 3;
+  uint64 checksum = 4;
+}
+
+service StorageService {
+  rpc Write(WriteRequest) returns (WriteReply);
+  rpc Read(ReadRequest) returns (ReadReply);
+}
