@@ -27,6 +27,10 @@ public:
     void HandleHeartbeat(const storagenode::HeartbeatRequest* request,
                          storagenode::HeartbeatResponse* response);
 
+    bool GetNode(const std::string& node_id, NodeContext& ctx) const;
+    // Optional: pre-register a virtual node with simulation parameters.
+    void AddVirtualNode(const std::string& node_id, const SimulationParams& params);
+
 private:
     void HealthLoop();
     std::string GenerateNodeId();

@@ -35,6 +35,16 @@ bool NodeRegistry::Exists(const std::string& node_id) const {
     return nodes_.find(node_id) != nodes_.end();
 }
 
+bool NodeRegistry::Get(const std::string& node_id, NodeContext& out) const {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    auto it = nodes_.find(node_id);
+    if (it == nodes_.end()) {
+        return false;
+    }
+    out = it->second;
+    return true;
+}
+
 std::vector<NodeContext> NodeRegistry::Snapshot() const {
     std::vector<NodeContext> out;
     std::shared_lock<std::shared_mutex> lk(mu_);

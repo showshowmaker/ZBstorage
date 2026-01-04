@@ -49,6 +49,7 @@ void StorageNodeManager::HandleRegister(const storagenode::RegisterRequest* requ
     ctx.port = request->port();
     ctx.hostname = request->hostname();
     ctx.disks.assign(request->disks().begin(), request->disks().end());
+    ctx.type = NodeType::Real;
     ctx.state = NodeState::Online;
     ctx.last_heartbeat = std::chrono::steady_clock::now();
 
@@ -117,4 +118,18 @@ void StorageNodeManager::FillStatus(rpc::Status* status, int code, const std::st
     } else {
         status->set_message(std::strerror(code));
     }
+}
+
+bool StorageNodeManager::GetNode(const std::string& node_id, NodeContext& ctx) const {
+    return registry_.Get(node_id, ctx);
+}
+
+void StorageNodeManager::AddVirtualNode(const std::string& node_id, const SimulationParams& params) {
+    NodeContext ctx;
+    ctx.node_id = node_id;
+    ctx.type = NodeType::Virtual;
+    ctx.sim_params = params;
+    ctx.state = NodeState::Online;
+    ctx.last_heartbeat = std::chrono::steady_clock::now();
+    registry_.Upsert(std::move(ctx));
 }

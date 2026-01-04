@@ -18,6 +18,9 @@ set(SRM_MAIN_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/ClusterManagerServiceImpl.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/StorageNodeManager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/NodeRegistry.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/gateway/GatewayServiceImpl.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/gateway/RequestDispatcher.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/simulation/VirtualNodeEngine.cpp
 )
 
 add_executable(srm_main ${SRM_MAIN_SOURCES})
