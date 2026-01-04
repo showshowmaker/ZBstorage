@@ -19,7 +19,7 @@ public:
 private:
     void MaybeFail(rpc::Status* status);
     void AddLatency();
-    void FillStatus(rpc::Status* status, int code, const std::string& msg);
+    void FillStatus(rpc::Status* status, rpc::StatusCode code, const std::string& msg);
 
     SimulationConfig cfg_;
     std::mt19937 rng_;

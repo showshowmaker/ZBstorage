@@ -20,11 +20,13 @@ public:
 
     void DispatchWrite(const storagenode::WriteRequest* req,
                        storagenode::WriteReply* resp,
-                       brpc::Controller* cntl);
+                       brpc::Controller* cntl,
+                       ::google::protobuf::Closure* done);
 
     void DispatchRead(const storagenode::ReadRequest* req,
                       storagenode::ReadReply* resp,
-                      brpc::Controller* cntl);
+                      brpc::Controller* cntl,
+                      ::google::protobuf::Closure* done);
 
 private:
     struct StubEntry {
@@ -40,5 +42,5 @@ private:
     StubMap stubs_;
 
     storagenode::StorageService_Stub* GetStub(const NodeContext& ctx);
-    void FillStatus(rpc::Status* status, int code, const std::string& msg);
+    void FillStatus(rpc::Status* status, rpc::StatusCode code, const std::string& msg);
 };

@@ -7,6 +7,8 @@
 #include <thread>
 #include <cerrno>
 
+#include "common/StatusUtils.h"
+
 VirtualNodeEngine::VirtualNodeEngine(SimulationConfig cfg)
     : cfg_(cfg),
       rng_(static_cast<uint32_t>(
@@ -20,14 +22,14 @@ void VirtualNodeEngine::SimulateWrite(const storagenode::WriteRequest* req,
         return;
     }
     MaybeFail(resp->mutable_status());
-    if (resp->status().code() != 0) {
+    if (resp->status().code() != rpc::STATUS_SUCCESS) {
         return;
     }
     AddLatency();
     // Compute checksum to mimic work
     (void)butil::crc32c::Value(req->data().data(), req->data().size());
     resp->set_bytes_written(static_cast<uint64_t>(req->data().size()));
-    FillStatus(resp->mutable_status(), 0, "");
+    FillStatus(resp->mutable_status(), rpc::STATUS_SUCCESS, "");
 }
 
 void VirtualNodeEngine::SimulateRead(const storagenode::ReadRequest* req,
@@ -36,7 +38,7 @@ void VirtualNodeEngine::SimulateRead(const storagenode::ReadRequest* req,
         return;
     }
     MaybeFail(resp->mutable_status());
-    if (resp->status().code() != 0) {
+    if (resp->status().code() != rpc::STATUS_SUCCESS) {
         return;
     }
     AddLatency();
@@ -46,7 +48,7 @@ void VirtualNodeEngine::SimulateRead(const storagenode::ReadRequest* req,
     resp->set_bytes_read(len);
     resp->set_checksum(butil::crc32c::Value(resp->data().data(),
                                             static_cast<size_t>(len)));
-    FillStatus(resp->mutable_status(), 0, "");
+    FillStatus(resp->mutable_status(), rpc::STATUS_SUCCESS, "");
 }
 
 void VirtualNodeEngine::MaybeFail(rpc::Status* status) {
@@ -54,7 +56,7 @@ void VirtualNodeEngine::MaybeFail(rpc::Status* status) {
         return;
     }
     if (failure_dist_(rng_) < cfg_.failure_rate) {
-        FillStatus(status, EIO, "simulated failure");
+        FillStatus(status, rpc::STATUS_VIRTUAL_NODE_ERROR, "simulated failure");
     }
 }
 
@@ -63,11 +65,6 @@ void VirtualNodeEngine::AddLatency() {
     bthread_usleep(static_cast<useconds_t>(ms) * 1000);
 }
 
-void VirtualNodeEngine::FillStatus(rpc::Status* status, int code, const std::string& msg) {
-    status->set_code(code);
-    if (code == 0) {
-        status->set_message("");
-        return;
-    }
-    status->set_message(msg.empty() ? "error" : msg);
+void VirtualNodeEngine::FillStatus(rpc::Status* status, rpc::StatusCode code, const std::string& msg) {
+    StatusUtils::SetStatus(status, code, msg);
 }

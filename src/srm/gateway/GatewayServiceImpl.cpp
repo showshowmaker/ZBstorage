@@ -1,25 +1,23 @@
 #include "GatewayServiceImpl.h"
 
-#include <brpc/closure_guard.h>
-
 void GatewayServiceImpl::Write(::google::protobuf::RpcController* controller,
                                const storagenode::WriteRequest* request,
                                storagenode::WriteReply* response,
                                ::google::protobuf::Closure* done) {
-    brpc::ClosureGuard guard(done);
     if (!dispatcher_) {
+        if (done) done->Run();
         return;
     }
-    dispatcher_->DispatchWrite(request, response, static_cast<brpc::Controller*>(controller));
+    dispatcher_->DispatchWrite(request, response, static_cast<brpc::Controller*>(controller), done);
 }
 
 void GatewayServiceImpl::Read(::google::protobuf::RpcController* controller,
                               const storagenode::ReadRequest* request,
                               storagenode::ReadReply* response,
                               ::google::protobuf::Closure* done) {
-    brpc::ClosureGuard guard(done);
     if (!dispatcher_) {
+        if (done) done->Run();
         return;
     }
-    dispatcher_->DispatchRead(request, response, static_cast<brpc::Controller*>(controller));
+    dispatcher_->DispatchRead(request, response, static_cast<brpc::Controller*>(controller), done);
 }

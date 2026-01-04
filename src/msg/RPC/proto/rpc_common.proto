@@ -1,8 +1,18 @@
 syntax = "proto3";
 package rpc;
 
+enum StatusCode {
+  STATUS_SUCCESS = 0;
+  STATUS_UNKNOWN_ERROR = 1;
+  STATUS_INVALID_ARGUMENT = 2;
+  STATUS_NODE_NOT_FOUND = 3;
+  STATUS_IO_ERROR = 4;
+  STATUS_NETWORK_ERROR = 5;
+  STATUS_VIRTUAL_NODE_ERROR = 6;
+}
+
 message Status {
-  int32 code = 1;
+  int32 code = 1; // Use StatusCode values
   string message = 2;
 }
 

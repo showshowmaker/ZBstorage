@@ -21,6 +21,7 @@ set(SRM_MAIN_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/gateway/GatewayServiceImpl.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/gateway/RequestDispatcher.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/simulation/VirtualNodeEngine.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/StatusUtils.cpp
 )
 
 add_executable(srm_main ${SRM_MAIN_SOURCES})
