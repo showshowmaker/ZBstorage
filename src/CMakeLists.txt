@@ -29,11 +29,9 @@ include_directories(${FUSE_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/../include)
 
 # --- 4. 包含所有子模块 ---
-# 依赖顺序：proto -> lib_dfs_client -> app / server
+# 依赖顺序：proto -> rpc -> fuse
 add_subdirectory(msg/proto)
-add_subdirectory(client/posix)
-add_subdirectory(monitor/posix)
-add_subdirectory(client/app)
+add_subdirectory(msg/RPC)
 add_subdirectory(client/fuse)
 
 add_library(StorageResourceAPI STATIC StorageResourceAPI.cpp)

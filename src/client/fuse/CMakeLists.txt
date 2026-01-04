@@ -16,19 +16,6 @@ include_directories(
   ${CMAKE_BINARY_DIR}/src/msg
 )
 
-# Legacy C-wrapper client
-add_executable(dfs_fuse_client fuse_main.cpp)
-target_compile_definitions(dfs_fuse_client PRIVATE 
-    _FILE_OFFSET_BITS=64
-    FUSE_DEBUG 
-)
-target_link_libraries(dfs_fuse_client
-    PRIVATE
-        dfs_client
-        ${FUSE_LIBRARIES}
-        ${CMAKE_CXX_STANDARD_LIBRARIES}
-)
-
 # New mount client
 add_executable(zb_fuse_client
   zb_fuse_main.cpp
