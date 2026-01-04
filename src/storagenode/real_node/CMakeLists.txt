@@ -21,6 +21,10 @@ add_executable(real_node_client
   test/real_node_client.cpp
 )
 
+add_executable(real_node_stress_client
+  test/real_node_stress_client.cpp
+)
+
 # Prefer modern brpc target when available, fall back to libraries list.
 set(_BRPC_LINK brpc::brpc)
 if(NOT TARGET brpc::brpc)
@@ -49,6 +53,12 @@ target_include_directories(real_node_client
     ${BRPC_INCLUDE_DIRS}
 )
 
+target_include_directories(real_node_stress_client
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${BRPC_INCLUDE_DIRS}
+)
+
 target_link_libraries(real_node_server
   PRIVATE
     storagenode_proto
@@ -63,7 +73,14 @@ target_link_libraries(real_node_client
     ${_GFLAGS_LINK}
 )
 
-set_target_properties(real_node_server real_node_client PROPERTIES
+target_link_libraries(real_node_stress_client
+  PRIVATE
+    storagenode_proto
+    ${_BRPC_LINK}
+    ${_GFLAGS_LINK}
+)
+
+set_target_properties(real_node_server real_node_client real_node_stress_client PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
 )

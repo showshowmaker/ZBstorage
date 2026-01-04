@@ -16,6 +16,7 @@ DEFINE_string(mount_point, "/tmp/realnode_disk", "Mount point or existing data d
 DEFINE_string(fs_type, "ext4", "Filesystem type used when auto-mounting");
 DEFINE_bool(auto_mount, false, "Whether to auto-mount device_path to mount_point");
 DEFINE_bool(sync_on_write, false, "Whether to fsync after writes");
+DEFINE_bool(skip_mount, false, "Skip mounting/device checks and use mount_point/base_path directly");
 DEFINE_string(base_path, "", "Data root; default uses mount_point if empty");
 
 int main(int argc, char** argv) {
@@ -25,7 +26,8 @@ int main(int argc, char** argv) {
     cfg.device_path = FLAGS_device_path;
     cfg.mount_point = FLAGS_mount_point;
     cfg.fs_type = FLAGS_fs_type;
-    cfg.auto_mount = FLAGS_auto_mount;
+    cfg.auto_mount = FLAGS_skip_mount ? false : FLAGS_auto_mount;
+    cfg.skip_mount = FLAGS_skip_mount;
 
     auto disk_mgr = std::make_shared<DiskManager>(cfg);
     IOEngine::Options io_opts;
@@ -52,6 +54,7 @@ int main(int argc, char** argv) {
 
     std::cout << "Storage real node server started at port " << FLAGS_port
               << ", base_path=" << (FLAGS_base_path.empty() ? FLAGS_mount_point : FLAGS_base_path)
+              << ", skip_mount=" << (FLAGS_skip_mount ? "true" : "false")
               << std::endl;
     server.RunUntilAskedToQuit();
     return 0;

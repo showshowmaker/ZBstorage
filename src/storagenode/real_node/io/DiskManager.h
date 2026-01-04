@@ -8,6 +8,8 @@ struct DiskMountConfig {
     std::string mount_point;
     std::string fs_type;
     bool auto_mount{true};
+    // When true, skip mounting/verification and treat mount_point as ready to use.
+    bool skip_mount{false};
 };
 
 struct DiskStats {

@@ -27,6 +27,13 @@ bool DiskManager::Prepare() {
         std::cerr << "DiskManager: mount_point is empty" << std::endl;
         return false;
     }
+    if (config_.skip_mount) {
+        if (!EnsureMountPoint()) {
+            std::cerr << "DiskManager: failed to ensure mount point " << config_.mount_point << std::endl;
+            return false;
+        }
+        return RefreshStats();
+    }
     if (!EnsureMountPoint()) {
         std::cerr << "DiskManager: failed to ensure mount point " << config_.mount_point << std::endl;
         return false;
@@ -119,13 +126,28 @@ bool DiskManager::RefreshStats() {
     struct statvfs st {};
     if (statvfs(config_.mount_point.c_str(), &st) != 0) {
         std::cerr << "DiskManager: statvfs failed (" << std::strerror(errno) << ")" << std::endl;
-        return false;
+        std::error_code ec;
+        auto sp = fs::space(config_.mount_point, ec);
+        if (ec) {
+            std::cerr << "DiskManager: filesystem::space failed (" << ec.message() << ")" << std::endl;
+            return false;
+        }
+        stats_.total_bytes = sp.capacity;
+        stats_.free_bytes = sp.available;
+        return true;
     }
     stats_.total_bytes = static_cast<uint64_t>(st.f_blocks) * st.f_frsize;
     stats_.free_bytes = static_cast<uint64_t>(st.f_bavail) * st.f_frsize;
     return true;
 #else
-    stats_ = {};
-    return false;
+    std::error_code ec;
+    auto sp = fs::space(config_.mount_point, ec);
+    if (ec) {
+        std::cerr << "DiskManager: filesystem::space failed (" << ec.message() << ")" << std::endl;
+        return false;
+    }
+    stats_.total_bytes = sp.capacity;
+    stats_.free_bytes = sp.available;
+    return true;
 #endif
 }
