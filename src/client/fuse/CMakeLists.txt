@@ -1,29 +1,48 @@
 cmake_minimum_required(VERSION 3.10)
 project(dfs_fuse_client CXX)
 
-# --- 查找 FUSE ---
-# 使用我们之前确认可用的 pkg-config 方式
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(FUSE REQUIRED fuse) # (或 fuse3)
+pkg_check_modules(FUSE REQUIRED fuse)
+find_package(Protobuf REQUIRED)
+find_package(GFlags REQUIRED)
+pkg_check_modules(BRPC REQUIRED brpc)
 
-# 添加 FUSE 的头文件路径
-include_directories(${FUSE_INCLUDE_DIRS})
+include_directories(
+  ${FUSE_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/common
+  ${CMAKE_SOURCE_DIR}/src/client
+  ${CMAKE_BINARY_DIR}/src/msg/RPC
+  ${CMAKE_BINARY_DIR}/src/msg
+)
 
-# 定义可执行文件
+# Legacy C-wrapper client
 add_executable(dfs_fuse_client fuse_main.cpp)
-
-# 为 dfs_fuse_client 目标添加 _FILE_OFFSET_BITS=64 编译定义
 target_compile_definitions(dfs_fuse_client PRIVATE 
     _FILE_OFFSET_BITS=64
     FUSE_DEBUG 
 )
-
-# 链接依赖
 target_link_libraries(dfs_fuse_client
     PRIVATE
-        dfs_client          # 1. 链接我们封装的 bRPC 库
-        ${FUSE_LIBRARIES}   # 2. 链接 FUSE 库
+        dfs_client
+        ${FUSE_LIBRARIES}
+        ${CMAKE_CXX_STANDARD_LIBRARIES}
 )
 
-# 再次添加 C++ 运行时，因为 FUSE 库可能是 C 写的
-target_link_libraries(dfs_fuse_client PRIVATE ${CMAKE_CXX_STANDARD_LIBRARIES})
+# New mount client
+add_executable(zb_fuse_client
+  zb_fuse_main.cpp
+  ../mount/DfsClient.cpp
+  ../mount/RpcClients.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/StatusUtils.cpp
+)
+target_compile_definitions(zb_fuse_client PRIVATE _FILE_OFFSET_BITS=64)
+target_link_libraries(zb_fuse_client
+  PRIVATE
+    rpc_proto
+    ${Protobuf_LIBRARIES}
+    ${BRPC_LIBRARIES}
+    ${GFLAGS_LIBRARIES}
+    ${FUSE_LIBRARIES}
+    ${CMAKE_CXX_STANDARD_LIBRARIES}
+)
