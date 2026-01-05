@@ -33,6 +33,7 @@ include_directories(${CMAKE_SOURCE_DIR}/../include)
 add_subdirectory(msg/proto)
 add_subdirectory(msg/RPC)
 add_subdirectory(client/fuse)
+add_subdirectory(srm)
 
 add_library(StorageResourceAPI STATIC StorageResourceAPI.cpp)
 
