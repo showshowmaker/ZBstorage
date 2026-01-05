@@ -5,6 +5,7 @@
 #include <string>
 #include <thread>
 
+#include <brpc/channel.h>
 #include "cluster_manager.pb.h"
 #include "../io/DiskManager.h"
 
