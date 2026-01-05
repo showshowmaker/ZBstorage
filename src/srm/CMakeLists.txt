@@ -44,7 +44,8 @@ endif()
 target_include_directories(srm_main
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/common
     ${CMAKE_BINARY_DIR}/msg/RPC
     ${CMAKE_BINARY_DIR}/msg
     ${CMAKE_BINARY_DIR}/msg/proto
