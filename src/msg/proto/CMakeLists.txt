@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 find_package(Protobuf REQUIRED)
 
 set(PROTO_SRC
+  ${CMAKE_SOURCE_DIR}/msg/RPC/proto/rpc_common.proto
   ${CMAKE_CURRENT_SOURCE_DIR}/storage_node.proto
   ${CMAKE_CURRENT_SOURCE_DIR}/cluster_manager.proto
 )
