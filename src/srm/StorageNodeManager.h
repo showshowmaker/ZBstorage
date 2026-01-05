@@ -12,6 +12,7 @@
 #include <brpc/channel.h>
 #include "mds.pb.h"
 #include "fs/volume/Volume.h"
+#include "fs/block/BlockManager.h"
 
 class StorageNodeManager {
 public:

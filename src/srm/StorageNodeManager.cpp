@@ -162,15 +162,16 @@ void StorageNodeManager::RegisterToMDS(const NodeContext& ctx) {
     }
     uint64_t total_blocks = capacity_bytes / 4096;
 
-    auto vol = std::make_shared<Volume>();
-    vol->set_uuid(ctx.node_id);
-    vol->block_manager().set_total_blocks(total_blocks);
+    const std::string volume_path = "/virtual"; // placeholder path
+    const size_t block_size = 4096;
+    const size_t blocks_per_group = 64;
+    auto vol = std::make_shared<Volume>(ctx.node_id, volume_path, total_blocks, block_size, blocks_per_group);
 
     auto data = vol->serialize();
 
     rpc::RegisterVolumeRequest req;
     req.mutable_volume()->set_data(data.data(), data.size());
-    req.set_type(static_cast<uint32_t>(rpc::VolumeType::SSD));
+    req.set_type(0); // 0: SSD (per VolumeType enum)
     req.set_persist_now(false);
 
     rpc::RegisterVolumeReply resp;
