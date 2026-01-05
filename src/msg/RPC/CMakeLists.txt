@@ -28,24 +28,21 @@ set(PROTO_FILES
 set(PROTOBUF_IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/proto)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
 
-set(REPO_ROOT ${CMAKE_SOURCE_DIR})
-# If configured from the repo root's src/ directory, adjust to parent.
-if(NOT EXISTS ${REPO_ROOT}/storagenode/optical/OpticalDiscLibrary.cpp)
-  get_filename_component(REPO_ROOT ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
-endif()
+# Always treat repo root as parent of this src/ directory.
+get_filename_component(REPO_ROOT ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/proto
   ${CMAKE_CURRENT_SOURCE_DIR}/server
   ${CMAKE_CURRENT_SOURCE_DIR}/client
-  ${REPO_ROOT}/src
-  ${REPO_ROOT}/src/storagenode
-  ${REPO_ROOT}/src/storagenode/hard_disc
-  ${REPO_ROOT}/src/fs
-  ${REPO_ROOT}/src/mds
-  ${REPO_ROOT}/src/debug
-  ${REPO_ROOT}/src/srm
+  ${REPO_ROOT}
+  ${REPO_ROOT}/storagenode
+  ${REPO_ROOT}/storagenode/hard_disc
+  ${REPO_ROOT}/fs
+  ${REPO_ROOT}/mds
+  ${REPO_ROOT}/debug
+  ${REPO_ROOT}/srm
   ${REPO_ROOT}/third_party
   ${CMAKE_CURRENT_BINARY_DIR}  # for generated *.pb.h
 )
