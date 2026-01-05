@@ -66,6 +66,8 @@ target_link_libraries(srm_main
   PRIVATE
     storagenode_proto
     rpc_proto
+    zb_storagenode
+    mds_server
     ${_BRPC_LINK}
     ${_GFLAGS_LINK}
 )

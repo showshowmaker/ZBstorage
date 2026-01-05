@@ -29,13 +29,12 @@ include_directories(${FUSE_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/../include)
 
 # --- 4. 包含所有子模块 ---
-# 依赖顺序：proto -> rpc -> fuse
+# 依赖顺序：proto -> rpc -> storagenode -> mds -> srm -> fuse
 add_subdirectory(msg/proto)
 add_subdirectory(msg/RPC)
-add_subdirectory(client/fuse)
+add_subdirectory(storagenode)
+add_subdirectory(mds)
 add_subdirectory(srm)
+add_subdirectory(client/fuse)
 
 add_library(StorageResourceAPI STATIC StorageResourceAPI.cpp)
-
-# Add MDS subdirectory so mds server and demo target are built when configuring from src/
-add_subdirectory(mds)
