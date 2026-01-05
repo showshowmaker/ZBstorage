@@ -13,6 +13,7 @@ endif()
 add_executable(real_node_server
   server/real_node_server.cpp
   server/StorageServiceImpl.cpp
+  meta/LocalMetadataManager.cpp
   io/DiskManager.cpp
   io/IOEngine.cpp
   agent/NodeAgent.cpp
