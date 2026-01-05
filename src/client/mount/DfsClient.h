@@ -11,6 +11,11 @@
 #include "RpcClients.h"
 #include "common/StatusUtils.h"
 
+struct InodeInfo {
+    uint64_t inode{0};
+    std::string volume_id;
+};
+
 class DfsClient {
 public:
     explicit DfsClient(MountConfig cfg);
@@ -27,10 +32,10 @@ public:
 private:
     int StatusToErrno(rpc::StatusCode code) const;
     bool PopulateStatFromInode(const rpc::FindInodeReply& reply, struct stat* st) const;
-    rpc::StatusCode LookupInode(const std::string& path, uint64_t& out_inode);
+    rpc::StatusCode LookupInode(const std::string& path, InodeInfo& out_info);
 
     MountConfig cfg_;
     std::unique_ptr<RpcClients> rpc_;
     int next_fd_{3};
-    std::unordered_map<int, uint64_t> fd_to_inode_;
+    std::unordered_map<int, InodeInfo> fd_info_;
 };

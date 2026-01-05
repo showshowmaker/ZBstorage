@@ -28,6 +28,7 @@ message LookupReply {
 message FindInodeReply {
   Status status = 1;
   InodeBlob inode = 2;
+  string volume_id = 3;
 }
 
 message DirectoryListReply {

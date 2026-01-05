@@ -199,6 +199,7 @@ public:
             return;
         }
         SerializeInode(*inode, response->mutable_inode());
+        response->set_volume_id(inode->getVolumeUUID());
         response->mutable_status()->CopyFrom(ToStatus(true));
         LogRequest("FindInode", request->path(), response->mutable_status());
     }

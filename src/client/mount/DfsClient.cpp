@@ -41,24 +41,32 @@ bool DfsClient::PopulateStatFromInode(const rpc::FindInodeReply& reply, struct s
     return true;
 }
 
-rpc::StatusCode DfsClient::LookupInode(const std::string& path, uint64_t& out_inode) {
+rpc::StatusCode DfsClient::LookupInode(const std::string& path, InodeInfo& out_info) {
     if (!rpc_ || !rpc_->mds()) return rpc::STATUS_NETWORK_ERROR;
     rpc::PathRequest req;
-    rpc::LookupReply resp;
+    rpc::FindInodeReply resp;
     brpc::Controller cntl;
     req.set_path(path);
-    rpc_->mds()->LookupIno(&cntl, &req, &resp, nullptr);
+    rpc_->mds()->FindInode(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) return rpc::STATUS_NETWORK_ERROR;
     auto code = StatusUtils::NormalizeCode(resp.status().code());
     if (code != rpc::STATUS_SUCCESS) return code;
-    out_inode = resp.inode();
+    out_info.inode = 0;
+    // For safety, also call LookupIno to get inode number.
+    rpc::LookupReply lresp;
+    brpc::Controller lcntl;
+    rpc_->mds()->LookupIno(&lcntl, &req, &lresp, nullptr);
+    if (!lcntl.Failed() && StatusUtils::NormalizeCode(lresp.status().code()) == rpc::STATUS_SUCCESS) {
+        out_info.inode = lresp.inode();
+    }
+    out_info.volume_id = resp.volume_id();
     return rpc::STATUS_SUCCESS;
 }
 
 int DfsClient::GetAttr(const std::string& path, struct stat* st) {
     if (!rpc_ || !rpc_->mds()) return -ECOMM;
-    uint64_t ino = 0;
-    auto code = LookupInode(path, ino);
+    InodeInfo info;
+    auto code = LookupInode(path, info);
     if (code != rpc::STATUS_SUCCESS) return -StatusToErrno(code);
 
     rpc::PathRequest req;
@@ -91,11 +99,11 @@ int DfsClient::ReadDir(const std::string& path, void* buf, fuse_fill_dir_t fille
 }
 
 int DfsClient::Open(const std::string& path, int flags, int& out_fd) {
-    uint64_t ino = 0;
-    auto code = LookupInode(path, ino);
+    InodeInfo info;
+    auto code = LookupInode(path, info);
     if (code != rpc::STATUS_SUCCESS) return -StatusToErrno(code);
     int fd = next_fd_++;
-    fd_to_inode_[fd] = ino;
+    fd_info_[fd] = info;
     out_fd = fd;
     return 0;
 }
@@ -116,14 +124,15 @@ int DfsClient::Create(const std::string& path, int flags, mode_t mode, int& out_
 
 int DfsClient::Read(int fd, char* buf, size_t size, off_t offset, ssize_t& out_bytes) {
     if (!rpc_ || !rpc_->srm()) return -ECOMM;
-    auto it = fd_to_inode_.find(fd);
-    if (it == fd_to_inode_.end()) return -EBADF;
+    auto it = fd_info_.find(fd);
+    if (it == fd_info_.end()) return -EBADF;
 
     storagenode::ReadRequest req;
     storagenode::ReadReply resp;
     brpc::Controller cntl;
-    req.set_node_id(cfg_.default_node_id);
-    req.set_chunk_id(static_cast<uint64_t>(it->second));
+    const std::string& node_id = it->second.volume_id.empty() ? cfg_.default_node_id : it->second.volume_id;
+    req.set_node_id(node_id);
+    req.set_chunk_id(static_cast<uint64_t>(it->second.inode));
     req.set_offset(static_cast<uint64_t>(offset));
     req.set_length(static_cast<uint64_t>(size));
     rpc_->srm()->Read(&cntl, &req, &resp, nullptr);
@@ -139,14 +148,15 @@ int DfsClient::Read(int fd, char* buf, size_t size, off_t offset, ssize_t& out_b
 
 int DfsClient::Write(int fd, const char* buf, size_t size, off_t offset, ssize_t& out_bytes) {
     if (!rpc_ || !rpc_->srm()) return -ECOMM;
-    auto it = fd_to_inode_.find(fd);
-    if (it == fd_to_inode_.end()) return -EBADF;
+    auto it = fd_info_.find(fd);
+    if (it == fd_info_.end()) return -EBADF;
 
     storagenode::WriteRequest req;
     storagenode::WriteReply resp;
     brpc::Controller cntl;
-    req.set_node_id(cfg_.default_node_id);
-    req.set_chunk_id(static_cast<uint64_t>(it->second));
+    const std::string& node_id = it->second.volume_id.empty() ? cfg_.default_node_id : it->second.volume_id;
+    req.set_node_id(node_id);
+    req.set_chunk_id(static_cast<uint64_t>(it->second.inode));
     req.set_offset(static_cast<uint64_t>(offset));
     req.set_data(buf, size);
     req.set_checksum(0);
@@ -162,9 +172,9 @@ int DfsClient::Write(int fd, const char* buf, size_t size, off_t offset, ssize_t
 }
 
 int DfsClient::Close(int fd) {
-    auto it = fd_to_inode_.find(fd);
-    if (it != fd_to_inode_.end()) {
-        fd_to_inode_.erase(it);
+    auto it = fd_info_.find(fd);
+    if (it != fd_info_.end()) {
+        fd_info_.erase(it);
     }
     return 0;
 }
