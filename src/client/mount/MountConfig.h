@@ -4,7 +4,6 @@
 
 struct MountConfig {
     std::string mds_addr{"127.0.0.1:9000"};
-    std::string vfs_addr{"127.0.0.1:9001"}; // legacy, unused in direct SRM path
     std::string srm_addr{"127.0.0.1:9100"};
     std::string mount_point{"/mnt/zbstorage"};
     std::string default_node_id{"node-1"};

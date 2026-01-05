@@ -6,7 +6,6 @@
 #include <brpc/channel.h>
 
 #include "mds.pb.h"
-#include "vfs.pb.h"
 #include "storage_node.pb.h"
 #include "MountConfig.h"
 
@@ -27,9 +26,7 @@ public:
 private:
     MountConfig cfg_;
     std::unique_ptr<brpc::Channel> mds_channel_;
-    std::unique_ptr<brpc::Channel> vfs_channel_;
     std::unique_ptr<brpc::Channel> srm_channel_;
     std::unique_ptr<rpc::MdsService_Stub> mds_stub_;
-    std::unique_ptr<rpc::VfsService_Stub> vfs_stub_;
     std::unique_ptr<storagenode::StorageService_Stub> srm_stub_;
 };

@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "mds.pb.h"
-#include "vfs.pb.h"
 #include "storage_node.pb.h"
 
 DfsClient::DfsClient(MountConfig cfg)
