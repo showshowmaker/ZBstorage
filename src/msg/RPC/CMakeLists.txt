@@ -28,8 +28,8 @@ set(PROTO_FILES
 set(PROTOBUF_IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/proto)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
 
-# Always treat repo root as parent of this src/ directory.
-get_filename_component(REPO_ROOT ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
+# Repository root where source lives.
+set(REPO_ROOT ${CMAKE_SOURCE_DIR})
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
