@@ -19,6 +19,8 @@ add_library(storagenode_proto ${STORAGENODE_PROTO_SRCS} ${STORAGENODE_PROTO_HDRS
 target_include_directories(storagenode_proto
   PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/msg/RPC
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/msg
 )
 target_link_libraries(storagenode_proto
