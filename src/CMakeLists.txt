@@ -38,3 +38,9 @@ add_subdirectory(srm)
 add_subdirectory(client/fuse)
 
 add_library(StorageResourceAPI STATIC StorageResourceAPI.cpp)
+
+# Optional tests (repo root ../tests)
+option(BUILD_ZB_TESTS "Build tests under ../tests" OFF)
+if(BUILD_ZB_TESTS)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/../tests tests)
+endif()

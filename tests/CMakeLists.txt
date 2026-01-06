@@ -10,6 +10,12 @@ find_package(Threads REQUIRED)
 # Gather all .cpp test sources in this directory and subdirectories
 file(GLOB_RECURSE TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
+# Optional toggle for fs_verify
+option(ENABLE_FS_VERIFY "Build fs_verify test" ON)
+if(NOT ENABLE_FS_VERIFY)
+  list(FILTER TEST_SRCS EXCLUDE REGEX ".*/fs_verify\\.cpp$")
+endif()
+
 # project root (父目录)
 set(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/..")
 # Option to enable zbss debug logging for test targets.
