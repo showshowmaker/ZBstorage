@@ -16,6 +16,7 @@ DEFINE_string(srm_addr, "127.0.0.1:9100", "SRM Gateway service address");
 DEFINE_string(node_id, "node-1", "Default node id to target on SRM/Real Node");
 DEFINE_string(mount_point, "/mnt/zbstorage", "Mount point");
 DEFINE_bool(allow_other, false, "Pass -o allow_other to FUSE so non-root users can access");
+DEFINE_bool(foreground, false, "Run FUSE in foreground (pass -f)");
 
 namespace {
 
@@ -116,14 +117,17 @@ int main(int argc, char* argv[]) {
                 cfg.default_node_id.c_str());
 
     // Build FUSE argv. Always pass program name and mount point.
-    // Optionally pass "-o allow_other" when enabled (requires /etc/fuse.conf user_allow_other).
-    char* fuse_argv[4];
+    // Optionally pass "-o allow_other" and "-f" (foreground) when enabled.
+    char* fuse_argv[6];
     fuse_argv[0] = argv[0];
     fuse_argv[1] = const_cast<char*>(cfg.mount_point.c_str());
     int fuse_argc = 2;
     if (FLAGS_allow_other) {
         fuse_argv[fuse_argc++] = const_cast<char*>("-o");
         fuse_argv[fuse_argc++] = const_cast<char*>("allow_other");
+    }
+    if (FLAGS_foreground) {
+        fuse_argv[fuse_argc++] = const_cast<char*>("-f");
     }
 
     return fuse_main(fuse_argc, fuse_argv, &ops, nullptr);
