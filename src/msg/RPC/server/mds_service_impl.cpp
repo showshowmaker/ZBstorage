@@ -10,6 +10,7 @@
 #include "mds.pb.h"
 #include "../../../src/mds/server/Server.h"
 #include "../../../src/fs/volume/VolumeRegistry.h"
+#include "common/StatusUtils.h"
 
 DEFINE_int32(mds_port, 8010, "Port of MDS server");
 DEFINE_int32(mds_idle_timeout, -1, "Idle timeout of mds server (default: infinite)");
@@ -185,7 +186,15 @@ public:
         brpc::ClosureGuard guard(done);
         uint64_t ino = mds_->LookupIno(request->path());
         response->set_inode(ino);
-        response->mutable_status()->CopyFrom(ToStatus(ino != static_cast<uint64_t>(-1)));
+        if (ino == static_cast<uint64_t>(-1)) {
+            StatusUtils::SetStatus(response->mutable_status(),
+                                   rpc::STATUS_NODE_NOT_FOUND,
+                                   "inode not found");
+        } else {
+            StatusUtils::SetStatus(response->mutable_status(),
+                                   rpc::STATUS_SUCCESS,
+                                   "");
+        }
         LogRequest("LookupIno", request->path(), response->mutable_status());
     }
 
@@ -196,13 +205,15 @@ public:
         brpc::ClosureGuard guard(done);
         auto inode = mds_->FindInodeByPath(request->path());
         if (!inode) {
-            response->mutable_status()->CopyFrom(ToStatus(false, "inode not found"));
+            StatusUtils::SetStatus(response->mutable_status(),
+                                   rpc::STATUS_NODE_NOT_FOUND,
+                                   "inode not found");
             LogRequest("FindInode", request->path(), response->mutable_status());
             return;
         }
         SerializeInode(*inode, response->mutable_inode());
         response->set_volume_id(inode->getVolumeUUID());
-        response->mutable_status()->CopyFrom(ToStatus(true));
+        StatusUtils::SetStatus(response->mutable_status(), rpc::STATUS_SUCCESS, "");
         LogRequest("FindInode", request->path(), response->mutable_status());
     }
 

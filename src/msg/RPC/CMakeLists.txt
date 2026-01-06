@@ -48,6 +48,7 @@ include_directories(
 )
 
 set(COMMON_SRCS
+  ${REPO_ROOT}/common/StatusUtils.cpp
   ${REPO_ROOT}/storagenode/optical/OpticalDiscLibrary.cpp
   ${REPO_ROOT}/storagenode/optical/OpticalDisc.cpp
   ${REPO_ROOT}/storagenode/StoreageNode.cpp

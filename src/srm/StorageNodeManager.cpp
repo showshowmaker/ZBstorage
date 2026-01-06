@@ -13,10 +13,12 @@
 
 StorageNodeManager::StorageNodeManager(std::chrono::milliseconds heartbeat_timeout,
                                        std::chrono::milliseconds health_check_interval,
-                                       std::string mds_addr)
+                                       std::string mds_addr,
+                                       VolumePolicy policy)
     : heartbeat_timeout_(heartbeat_timeout),
       health_check_interval_(health_check_interval),
-      mds_addr_(std::move(mds_addr)) {}
+      mds_addr_(std::move(mds_addr)),
+      volume_policy_(policy) {}
 
 StorageNodeManager::~StorageNodeManager() {
     Stop();
@@ -165,7 +167,7 @@ void StorageNodeManager::RegisterToMDS(const NodeContext& ctx) {
 
     rpc::RegisterVolumeRequest req;
     req.mutable_volume()->set_data(data.data(), data.size());
-    req.set_type(0); // 0: SSD (per VolumeType enum)
+    req.set_type(static_cast<uint32_t>(ResolveVolumeType(ctx)));
     req.set_persist_now(false);
 
     rpc::RegisterVolumeReply resp;
@@ -180,5 +182,17 @@ void StorageNodeManager::RegisterToMDS(const NodeContext& ctx) {
     } else {
         std::cerr << "[SRM] Synced node " << ctx.node_id << " to MDS volume index "
                   << resp.index() << std::endl;
+    }
+}
+
+VolumeType StorageNodeManager::ResolveVolumeType(const NodeContext& ctx) const {
+    switch (volume_policy_) {
+        case VolumePolicy::PreferReal:
+            return (ctx.type == NodeType::Virtual) ? VolumeType::HDD : VolumeType::SSD;
+        case VolumePolicy::PreferVirtual:
+            return (ctx.type == NodeType::Virtual) ? VolumeType::SSD : VolumeType::HDD;
+        case VolumePolicy::AllSsd:
+        default:
+            return VolumeType::SSD;
     }
 }

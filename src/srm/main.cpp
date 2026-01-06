@@ -22,14 +22,22 @@ DEFINE_int32(virtual_max_latency_ms, 50, "Virtual node max latency (ms)");
 DEFINE_double(virtual_failure_rate, 0.0, "Virtual node failure rate (0.0-1.0)");
 DEFINE_int32(virtual_node_count, 0, "Number of virtual nodes to pre-register");
 DEFINE_uint64(virtual_node_capacity_bytes, 100ULL * 1024 * 1024 * 1024, "Capacity per virtual node in bytes");
+DEFINE_string(volume_policy, "prefer_real", "Volume allocation policy: prefer_real|prefer_virtual|all_ssd");
 
 int main(int argc, char** argv) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+    StorageNodeManager::VolumePolicy policy = StorageNodeManager::VolumePolicy::PreferReal;
+    if (FLAGS_volume_policy == "prefer_virtual") {
+        policy = StorageNodeManager::VolumePolicy::PreferVirtual;
+    } else if (FLAGS_volume_policy == "all_ssd") {
+        policy = StorageNodeManager::VolumePolicy::AllSsd;
+    }
     auto manager = std::make_shared<StorageNodeManager>(
         std::chrono::seconds(FLAGS_heartbeat_timeout_sec),
         std::chrono::seconds(FLAGS_health_check_interval_sec),
-        FLAGS_mds_addr);
+        FLAGS_mds_addr,
+        policy);
     manager->Start();
 
     ClusterManagerServiceImpl service(manager);

@@ -13,12 +13,20 @@
 #include "mds.pb.h"
 #include "fs/volume/Volume.h"
 #include "fs/block/BlockManager.h"
+#include "fs/volume/VolumeRegistry.h"
 
 class StorageNodeManager {
 public:
+    enum class VolumePolicy {
+        PreferReal,
+        PreferVirtual,
+        AllSsd,
+    };
+
     StorageNodeManager(std::chrono::milliseconds heartbeat_timeout,
                        std::chrono::milliseconds health_check_interval,
-                       std::string mds_addr);
+                       std::string mds_addr,
+                       VolumePolicy policy);
     ~StorageNodeManager();
 
     StorageNodeManager(const StorageNodeManager&) = delete;
@@ -41,6 +49,7 @@ private:
     void HealthLoop();
     std::string GenerateNodeId();
     void RegisterToMDS(const NodeContext& ctx);
+    VolumeType ResolveVolumeType(const NodeContext& ctx) const;
 
     NodeRegistry registry_;
     std::atomic<uint64_t> id_seq_{1};
@@ -51,4 +60,5 @@ private:
     std::string mds_addr_;
     std::unique_ptr<brpc::Channel> mds_channel_;
     std::unique_ptr<rpc::MdsService_Stub> mds_stub_;
+    VolumePolicy volume_policy_{VolumePolicy::PreferReal};
 };
