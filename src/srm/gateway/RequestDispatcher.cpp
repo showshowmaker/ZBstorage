@@ -28,20 +28,29 @@ public:
             delete this;
             return;
         }
+        rpc::StatusCode code = rpc::STATUS_UNKNOWN_ERROR;
+        std::string msg;
         if (real_cntl_ && real_cntl_->Failed()) {
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    rpc::STATUS_NETWORK_ERROR,
                                    real_cntl_->ErrorText());
+            code = rpc::STATUS_NETWORK_ERROR;
+            msg = real_cntl_->ErrorText();
         } else if (real_resp_) {
             client_resp_->set_bytes_written(real_resp_->bytes_written());
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    StatusUtils::NormalizeCode(real_resp_->status().code()),
                                    real_resp_->status().message());
+            code = StatusUtils::NormalizeCode(real_resp_->status().code());
+            msg = real_resp_->status().message();
         } else {
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    rpc::STATUS_UNKNOWN_ERROR,
                                    "empty response");
         }
+        std::cout << "[Gateway] WriteResp(real) bytes=" << client_resp_->bytes_written()
+                  << " code=" << static_cast<int>(code)
+                  << " msg=" << msg << std::endl;
         if (client_done_) client_done_->Run();
         delete this;
     }
@@ -72,10 +81,14 @@ public:
             delete this;
             return;
         }
+        rpc::StatusCode code = rpc::STATUS_UNKNOWN_ERROR;
+        std::string msg;
         if (real_cntl_ && real_cntl_->Failed()) {
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    rpc::STATUS_NETWORK_ERROR,
                                    real_cntl_->ErrorText());
+            code = rpc::STATUS_NETWORK_ERROR;
+            msg = real_cntl_->ErrorText();
         } else if (real_resp_) {
             client_resp_->set_bytes_read(real_resp_->bytes_read());
             client_resp_->mutable_data()->swap(*real_resp_->mutable_data());
@@ -83,11 +96,16 @@ public:
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    StatusUtils::NormalizeCode(real_resp_->status().code()),
                                    real_resp_->status().message());
+            code = StatusUtils::NormalizeCode(real_resp_->status().code());
+            msg = real_resp_->status().message();
         } else {
             StatusUtils::SetStatus(client_resp_->mutable_status(),
                                    rpc::STATUS_UNKNOWN_ERROR,
                                    "empty response");
         }
+        std::cout << "[Gateway] ReadResp(real) bytes=" << client_resp_->bytes_read()
+                  << " code=" << static_cast<int>(code)
+                  << " msg=" << msg << std::endl;
         if (client_done_) client_done_->Run();
         delete this;
     }
@@ -114,6 +132,10 @@ void RequestDispatcher::DispatchWrite(const storagenode::WriteRequest* req,
         if (done) done->Run();
         return;
     }
+    std::cout << "[Gateway] WriteReq node=" << req->node_id()
+              << " chunk=" << req->chunk_id()
+              << " offset=" << req->offset()
+              << " size=" << req->data().size() << std::endl;
     NodeContext ctx;
     if (!manager_ || !manager_->GetNode(req->node_id(), ctx)) {
         FillStatus(resp->mutable_status(), rpc::STATUS_NODE_NOT_FOUND, "unknown node");
@@ -127,6 +149,10 @@ void RequestDispatcher::DispatchWrite(const storagenode::WriteRequest* req,
             return;
         }
         virtual_engine_->SimulateWrite(req, resp);
+        std::cout << "[Gateway] WriteResp node=" << req->node_id()
+                  << " chunk=" << req->chunk_id()
+                  << " bytes=" << resp->bytes_written()
+                  << " code=" << resp->status().code() << std::endl;
         if (done) done->Run();
         return;
     }
@@ -156,6 +182,10 @@ void RequestDispatcher::DispatchRead(const storagenode::ReadRequest* req,
         if (done) done->Run();
         return;
     }
+    std::cout << "[Gateway] ReadReq node=" << req->node_id()
+              << " chunk=" << req->chunk_id()
+              << " offset=" << req->offset()
+              << " length=" << req->length() << std::endl;
     NodeContext ctx;
     if (!manager_ || !manager_->GetNode(req->node_id(), ctx)) {
         FillStatus(resp->mutable_status(), rpc::STATUS_NODE_NOT_FOUND, "unknown node");
@@ -169,6 +199,10 @@ void RequestDispatcher::DispatchRead(const storagenode::ReadRequest* req,
             return;
         }
         virtual_engine_->SimulateRead(req, resp);
+        std::cout << "[Gateway] ReadResp node=" << req->node_id()
+                  << " chunk=" << req->chunk_id()
+                  << " bytes=" << resp->bytes_read()
+                  << " code=" << resp->status().code() << std::endl;
         if (done) done->Run();
         return;
     }

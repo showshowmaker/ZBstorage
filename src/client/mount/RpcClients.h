@@ -20,7 +20,6 @@ public:
     bool Init();
 
     rpc::MdsService_Stub* mds() { return mds_stub_.get(); }
-    rpc::VfsService_Stub* vfs() { return vfs_stub_.get(); }
     storagenode::StorageService_Stub* srm() { return srm_stub_.get(); }
 
 private:

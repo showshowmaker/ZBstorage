@@ -12,10 +12,10 @@
 #include "client/mount/MountConfig.h"
 
 DEFINE_string(mds_addr, "127.0.0.1:9000", "MDS service address");
-DEFINE_string(vfs_addr, "127.0.0.1:9001", "VFS service address");
 DEFINE_string(srm_addr, "127.0.0.1:9100", "SRM Gateway service address");
 DEFINE_string(node_id, "node-1", "Default node id to target on SRM/Real Node");
 DEFINE_string(mount_point, "/mnt/zbstorage", "Mount point");
+DEFINE_bool(allow_other, false, "Pass -o allow_other to FUSE so non-root users can access");
 
 namespace {
 
@@ -99,14 +99,13 @@ int main(int argc, char* argv[]) {
 
     MountConfig cfg;
     cfg.mds_addr = FLAGS_mds_addr;
-    cfg.vfs_addr = FLAGS_vfs_addr;
     cfg.srm_addr = FLAGS_srm_addr;
     cfg.mount_point = FLAGS_mount_point;
     cfg.default_node_id = FLAGS_node_id;
     g_client = std::make_shared<DfsClient>(cfg);
     if (!g_client->Init()) {
-        std::fprintf(stderr, "Failed to initialize DFS client (mds=%s vfs=%s)\n",
-                     cfg.mds_addr.c_str(), cfg.vfs_addr.c_str());
+        std::fprintf(stderr, "Failed to initialize DFS client (mds=%s srm=%s)\n",
+                     cfg.mds_addr.c_str(), cfg.srm_addr.c_str());
         return 1;
     }
 
@@ -116,10 +115,16 @@ int main(int argc, char* argv[]) {
                 cfg.mount_point.c_str(), cfg.mds_addr.c_str(), cfg.srm_addr.c_str(),
                 cfg.default_node_id.c_str());
 
-    char* fuse_argv[2];
+    // Build FUSE argv. Always pass program name and mount point.
+    // Optionally pass "-o allow_other" when enabled (requires /etc/fuse.conf user_allow_other).
+    char* fuse_argv[4];
     fuse_argv[0] = argv[0];
     fuse_argv[1] = const_cast<char*>(cfg.mount_point.c_str());
     int fuse_argc = 2;
+    if (FLAGS_allow_other) {
+        fuse_argv[fuse_argc++] = const_cast<char*>("-o");
+        fuse_argv[fuse_argc++] = const_cast<char*>("allow_other");
+    }
 
     return fuse_main(fuse_argc, fuse_argv, &ops, nullptr);
 }

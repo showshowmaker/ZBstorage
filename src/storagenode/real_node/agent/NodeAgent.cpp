@@ -137,11 +137,9 @@ bool NodeAgent::DoHeartbeat() {
 
     stub_->Heartbeat(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        std::cerr << "[NodeAgent] Heartbeat RPC failed: " << cntl.ErrorText() << std::endl;
         return false;
     }
     if (resp.status().code() != 0) {
-        std::cerr << "[NodeAgent] Heartbeat rejected: " << resp.status().message() << std::endl;
         if (resp.require_rereg()) {
             node_id_.clear();
         }
@@ -149,7 +147,6 @@ bool NodeAgent::DoHeartbeat() {
     }
     if (resp.require_rereg()) {
         node_id_.clear();
-        std::cerr << "[NodeAgent] SRM requested re-registration" << std::endl;
     }
     return true;
 }

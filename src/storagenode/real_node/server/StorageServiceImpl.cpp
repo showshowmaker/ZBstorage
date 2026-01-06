@@ -52,6 +52,9 @@ void StorageServiceImpl::Write(::google::protobuf::RpcController* controller,
         StatusUtils::SetStatus(status, rpc::STATUS_INVALID_ARGUMENT, "io engine is null");
         return;
     }
+    std::cout << "[RealNode] WriteReq chunk=" << request->chunk_id()
+              << " offset=" << request->offset()
+              << " size=" << request->data().size() << std::endl;
     if (request->checksum() != 0) {
         uint64_t actual = ComputeChecksum(request->data().data(), request->data().size());
         if (actual != request->checksum()) {
@@ -91,6 +94,9 @@ void StorageServiceImpl::Write(::google::protobuf::RpcController* controller,
     }
     response->set_bytes_written(static_cast<uint64_t>(res.bytes));
     Ok(status);
+    std::cout << "[RealNode] WriteResp chunk=" << request->chunk_id()
+              << " bytes=" << response->bytes_written()
+              << " code=" << response->status().code() << std::endl;
 }
 
 void StorageServiceImpl::Read(::google::protobuf::RpcController* controller,
@@ -112,6 +118,9 @@ void StorageServiceImpl::Read(::google::protobuf::RpcController* controller,
         StatusUtils::SetStatus(status, rpc::STATUS_INVALID_ARGUMENT, "io engine is null");
         return;
     }
+    std::cout << "[RealNode] ReadReq chunk=" << request->chunk_id()
+              << " offset=" << request->offset()
+              << " length=" << request->length() << std::endl;
 
     std::string path = metadata_mgr_->GetPath(request->chunk_id());
     if (path.empty()) {
@@ -147,6 +156,9 @@ void StorageServiceImpl::Read(::google::protobuf::RpcController* controller,
     response->set_checksum(ComputeChecksum(response->data().data(),
                                            static_cast<size_t>(res.bytes)));
     Ok(status);
+    std::cout << "[RealNode] ReadResp chunk=" << request->chunk_id()
+              << " bytes=" << response->bytes_read()
+              << " code=" << response->status().code() << std::endl;
 }
 
 void StorageServiceImpl::UnmountDisk(::google::protobuf::RpcController* controller,
