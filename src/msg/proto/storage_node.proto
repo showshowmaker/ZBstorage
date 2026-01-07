@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package storagenode;
+
+import "rpc_common.proto";
+
+option cc_generic_services = true;
+
+message WriteRequest {
+  // Optional: target node id for gateway routing.
+  string node_id = 100;
+  uint64 chunk_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+  uint64 checksum = 4;
+  int32 flags = 5;
+  int32 mode = 6;
+}
+
+message WriteReply {
+  rpc.Status status = 1;
+  uint64 bytes_written = 2;
+}
+
+message UnmountRequest {
+  string node_id = 1;
+  string reason = 2;
+}
+
+message UnmountReply {
+  rpc.Status status = 1;
+}
+
+message ReadRequest {
+  // Optional: target node id for gateway routing.
+  string node_id = 100;
+  uint64 chunk_id = 1;
+  uint64 offset = 2;
+  uint64 length = 3;
+  int32 flags = 4;
+  int32 mode = 5;
+}
+
+message ReadReply {
+  rpc.Status status = 1;
+  bytes data = 2;
+  uint64 bytes_read = 3;
+  uint64 checksum = 4;
+}
+
+message TruncateRequest {
+  // Optional: target node id for gateway routing.
+  string node_id = 100;
+  uint64 chunk_id = 1;
+  uint64 size = 2;
+}
+
+message TruncateReply {
+  rpc.Status status = 1;
+}
+
+service StorageService {
+  rpc Write(WriteRequest) returns (WriteReply);
+  rpc Read(ReadRequest) returns (ReadReply);
+  rpc Truncate(TruncateRequest) returns (TruncateReply);
+  rpc UnmountDisk(UnmountRequest) returns (UnmountReply);
+}

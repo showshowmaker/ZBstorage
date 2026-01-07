@@ -270,7 +270,10 @@ bool MdsServer::CreateFile(const std::string& path, mode_t mode) {
     std::string parent_path = (last_slash == 0) ? "/" : path.substr(0, last_slash);
 
     auto parent_ino = LookupIno(parent_path);
-    if (parent_ino == static_cast<uint64_t>(-1)) return false;
+    if (parent_ino == static_cast<uint64_t>(-1)) {
+        std::cerr << "[MDS] CreateFile parent missing: " << parent_path << std::endl;
+        return false;
+    }
 
     auto parent_inode = std::make_shared<Inode>();
     meta_->get_inode_storage()->read_inode(parent_ino, *parent_inode);
@@ -286,26 +289,37 @@ bool MdsServer::CreateFile(const std::string& path, mode_t mode) {
     new_inode->setFilename(path);
 
     new_inode->inode = meta_->allocate_inode(mode);
-    if (new_inode->inode == static_cast<uint64_t>(-1)) return false;
+    if (new_inode->inode == static_cast<uint64_t>(-1)) {
+        std::cerr << "[MDS] CreateFile allocate_inode failed for " << path << std::endl;
+        return false;
+    }
 
     // 为 inode 分配卷（如果 MDS 配置了 volume allocator）
     if (volume_allocator_) {
-        volume_allocator_->allocate_for_inode(new_inode);
+        if (!volume_allocator_->allocate_for_inode(new_inode)) {
+            std::cerr << "[MDS] CreateFile volume allocation failed for " << path << std::endl;
+        }
     }
 
     // 在父目录加入文件目录项
     DirectoryEntry file_entry(filename, new_inode->inode, FileType::Regular);
-    if (!dir_store_->add(parent_ino, file_entry)) return false;
+    if (!dir_store_->add(parent_ino, file_entry)) {
+        std::cerr << "[MDS] CreateFile dir_store add failed for " << path << std::endl;
+        return false;
+    }
 
     if (!meta_->get_inode_storage()->write_inode(new_inode->inode, *new_inode)) {
         std::unique_lock<std::shared_mutex> lk(mtx_namespace_);
         inode_table_.erase(path);
+        std::cerr << "[MDS] CreateFile write_inode failed for " << path << std::endl;
         return false;
     }
 
     // KV sync: store path -> inode mapping when creating a file
     if (meta_) {
-        meta_->put_inode_for_path(path, *new_inode);
+        if (!meta_->put_inode_for_path(path, *new_inode)) {
+            std::cerr << "[MDS] CreateFile KV put failed for " << path << std::endl;
+        }
     }
 
     std::unique_lock<std::shared_mutex> lk(mtx_namespace_);

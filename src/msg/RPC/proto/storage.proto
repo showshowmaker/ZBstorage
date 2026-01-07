@@ -1,0 +1,52 @@
+syntax = "proto3";
+package rpc;
+
+import "rpc_common.proto";
+import "mds.proto"; // for Empty
+
+option cc_generic_services = true;
+
+message StorageRegisterVolumeRequest {
+  VolumeBlob volume = 1;
+  uint32 type = 2;
+}
+
+message StorageIORequest {
+  InodeBlob inode = 1;
+  uint64 offset = 2;
+  bytes data = 3; // for write: payload; for read: size only
+}
+
+message StorageWriteReply {
+  Status status = 1;
+  int64 bytes = 2;
+  InodeBlob inode = 3; // updated inode
+}
+
+message StorageReadReply {
+  Status status = 1;
+  int64 bytes = 2;
+  bytes data = 3;
+  InodeBlob inode = 4;
+}
+
+message VolumeInfo {
+  VolumeBlob volume = 1;
+  uint32 type = 2; // VolumeType enum index
+}
+
+message VolumeListReply {
+  Status status = 1;
+  repeated VolumeInfo volumes = 2;
+}
+
+service StorageService {
+  rpc RegisterVolume(StorageRegisterVolumeRequest) returns (Status);
+  rpc WriteFile(StorageIORequest) returns (StorageWriteReply);
+  rpc ReadFile(StorageIORequest) returns (StorageReadReply);
+  rpc ReleaseInodeBlocks(InodeBlob) returns (Status);
+  // Enumerate volumes initialized from StorageResource (initOneNodeVolume loop)
+  rpc ListAllVolumes(Empty) returns (VolumeListReply);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
+}

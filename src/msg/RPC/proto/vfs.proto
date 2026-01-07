@@ -1,0 +1,63 @@
+syntax = "proto3";
+package rpc;
+
+import "rpc_common.proto";
+import "mds.proto";
+
+option cc_generic_services = true;
+
+message OpenRequest {
+  string path = 1;
+  int32 flags = 2;
+  uint32 mode = 3;
+}
+
+message FdRequest {
+  int32 fd = 1;
+}
+
+message SeekRequest {
+  int32 fd = 1;
+  int64 offset = 2;
+  int32 whence = 3;
+}
+
+message SeekReply {
+  Status status = 1;
+  int64 offset = 2;
+}
+
+message IORequestFD {
+  int32 fd = 1;
+  bytes data = 2; // write payload or read size indicator (length only)
+}
+
+message IOReplyFD {
+  Status status = 1;
+  int64 bytes = 2;
+  bytes data = 3; // for read
+}
+
+service VfsService {
+  rpc Startup(Empty) returns (Status);
+  rpc Shutdown(Empty) returns (Status);
+  rpc CreateRootDirectory(Empty) returns (Status);
+  rpc Mkdir(PathModeRequest) returns (Status);
+  rpc Rmdir(PathRequest) returns (Status);
+  rpc Ls(PathRequest) returns (DirectoryListReply);
+  rpc LookupInode(PathRequest) returns (LookupReply);
+  rpc CreateFile(PathModeRequest) returns (Status);
+  rpc RemoveFile(PathRequest) returns (Status);
+  rpc RegisterVolume(RegisterVolumeRequest) returns (RegisterVolumeReply);
+  rpc Open(OpenRequest) returns (IOReplyFD);   // bytes=fd, status code
+  rpc Close(FdRequest) returns (Status);
+  rpc ShutdownFd(FdRequest) returns (Status);
+  rpc Seek(SeekRequest) returns (SeekReply);
+  rpc Write(IORequestFD) returns (IOReplyFD);
+  rpc Read(IORequestFD) returns (IOReplyFD);
+  rpc CollectColdInodes(ColdInodeRequest) returns (ColdInodeListReply);
+  rpc CollectColdInodesBitmap(ColdInodeBitmapRequest) returns (ColdInodeBitmapReply);
+  rpc CollectColdInodesByAtimePercent(ColdInodePercentRequest) returns (ColdInodeListReply);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
+}

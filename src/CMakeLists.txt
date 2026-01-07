@@ -29,14 +29,18 @@ include_directories(${FUSE_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/../include)
 
 # --- 4. 包含所有子模块 ---
-# 依赖顺序：proto -> lib_dfs_client -> app / server
+# 依赖顺序：proto -> rpc -> storagenode -> mds -> srm -> fuse
 add_subdirectory(msg/proto)
-add_subdirectory(client/posix)
-add_subdirectory(monitor/posix)
-add_subdirectory(client/app)
+add_subdirectory(msg/RPC)
+add_subdirectory(storagenode)
+add_subdirectory(mds)
+add_subdirectory(srm)
 add_subdirectory(client/fuse)
 
 add_library(StorageResourceAPI STATIC StorageResourceAPI.cpp)
 
-# Add MDS subdirectory so mds server and demo target are built when configuring from src/
-add_subdirectory(mds)
+# Optional tests (repo root ../tests)
+option(BUILD_ZB_TESTS "Build tests under ../tests" OFF)
+if(BUILD_ZB_TESTS)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/../tests tests)
+endif()

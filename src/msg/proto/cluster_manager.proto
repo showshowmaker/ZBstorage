@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package storagenode;
+
+import "rpc_common.proto";
+
+option cc_generic_services = true;
+
+message DiskInfo {
+  string mount_point = 1;
+  uint64 total_bytes = 2;
+  uint64 free_bytes = 3;
+}
+
+message RegisterRequest {
+  string ip = 1;
+  uint32 port = 2;
+  string hostname = 3;
+  repeated DiskInfo disks = 4;
+}
+
+message RegisterResponse {
+  rpc.Status status = 1;
+  string node_id = 2;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  uint64 timestamp_ms = 2;
+  double cpu_usage = 3;
+  double mem_usage = 4;
+  uint64 in_flight_io = 5;
+}
+
+message HeartbeatResponse {
+  rpc.Status status = 1;
+  bool require_rereg = 2;
+}
+
+service ClusterManagerService {
+  rpc RegisterNode(RegisterRequest) returns (RegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}

@@ -1,0 +1,132 @@
+syntax = "proto3";
+package rpc;
+
+import "rpc_common.proto";
+
+option cc_generic_services = true;
+
+message Empty {}
+
+message PathRequest {
+  string path = 1;
+}
+
+message PathModeRequest {
+  string path = 1;
+  uint32 mode = 2;
+}
+
+message TruncateRequest {
+  string path = 1;
+}
+
+message UpdateFileSizeRequest {
+  uint64 inode = 1;
+  uint64 size_bytes = 2;
+}
+
+message LookupReply {
+  Status status = 1;
+  uint64 inode = 2;
+}
+
+message FindInodeReply {
+  Status status = 1;
+  InodeBlob inode = 2;
+  string volume_id = 3; // legacy field (node_id is preferred)
+  string node_id = 4;
+}
+
+message DirectoryListReply {
+  Status status = 1;
+  repeated DirectoryEntry entries = 2;
+}
+
+message WriteInodeRequest {
+  uint64 ino = 1;
+  InodeBlob inode = 2;
+}
+
+message RegisterVolumeRequest {
+  VolumeBlob volume = 1;
+  uint32 type = 2; // VolumeType enum index
+  bool persist_now = 3;
+}
+
+enum NodeType {
+  NODE_REAL = 0;
+  NODE_VIRTUAL = 1;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string ip = 2;
+  uint32 port = 3;
+  uint64 capacity_bytes = 4;
+  uint64 free_bytes = 5;
+  NodeType node_type = 6;
+}
+
+message RegisterNodeRequest {
+  NodeInfo node = 1;
+}
+
+message RegisterNodeReply {
+  Status status = 1;
+}
+
+message RegisterVolumeReply {
+  Status status = 1;
+  int32 index = 2;
+}
+
+message ColdInodeRequest {
+  uint64 max_candidates = 1;
+  uint64 min_age_windows = 2;
+}
+
+message ColdInodeBitmapRequest {
+  uint64 min_age_windows = 1;
+}
+
+message ColdInodePercentRequest {
+  double percent = 1;
+}
+
+message ColdInodeListReply {
+  Status status = 1;
+  repeated uint64 inodes = 2;
+}
+
+message ColdInodeBitmapReply {
+  Status status = 1;
+  bytes bitmap = 2;
+  uint64 bit_count = 3;
+}
+
+message RemoveFileReply {
+  Status status = 1;
+  repeated uint64 detached_inodes = 2;
+}
+
+service MdsService {
+  rpc CreateRoot(Empty) returns (Status);
+  rpc Mkdir(PathModeRequest) returns (Status);
+  rpc Rmdir(PathRequest) returns (Status);
+  rpc CreateFile(PathModeRequest) returns (Status);
+  rpc RemoveFile(PathRequest) returns (RemoveFileReply);
+  rpc TruncateFile(PathRequest) returns (Status);
+  rpc UpdateFileSize(UpdateFileSizeRequest) returns (Status);
+  rpc Ls(PathRequest) returns (DirectoryListReply);
+  rpc LookupIno(PathRequest) returns (LookupReply);
+  rpc FindInode(PathRequest) returns (FindInodeReply);
+  rpc WriteInode(WriteInodeRequest) returns (Status);
+  rpc CollectColdInodes(ColdInodeRequest) returns (ColdInodeListReply);
+  rpc CollectColdInodesBitmap(ColdInodeBitmapRequest) returns (ColdInodeBitmapReply);
+  rpc CollectColdInodesByAtimePercent(ColdInodePercentRequest) returns (ColdInodeListReply);
+  rpc RegisterVolume(RegisterVolumeRequest) returns (RegisterVolumeReply);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeReply);
+  rpc RebuildInodeTable(Empty) returns (Status);
+  // Prometheus text format metrics
+  rpc GetMetricsProm(Empty) returns (MetricsReply);
+}

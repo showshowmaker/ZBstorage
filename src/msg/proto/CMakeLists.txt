@@ -1,19 +1,34 @@
-# Protobuf 已由根 CMakeLists.txt 查找
+cmake_minimum_required(VERSION 3.10)
 
-# 生成 .pb.h 和 .pb.cc 文件
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS posix.proto)
+find_package(Protobuf REQUIRED)
 
-# 定义库目标
-add_library(dfs_proto STATIC ${PROTO_SRCS})
-
-# 声明公共属性
-target_include_directories(dfs_proto
-    PUBLIC
-        # 1. 包含生成的 .pb.h 文件
-        ${CMAKE_CURRENT_BINARY_DIR}
+set(PROTO_SRC
+  ${CMAKE_SOURCE_DIR}/msg/RPC/proto/rpc_common.proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/storage_node.proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/cluster_manager.proto
 )
-target_link_libraries(dfs_proto
-    PUBLIC
-        # 2. 链接由 pkg-config 找到的 Protobuf 库
-        ${PROTOBUF_LIBRARIES}
+
+# Allow imports like "RPC/proto/..." used inside the proto.
+set(PROTOBUF_IMPORT_DIRS
+  ${CMAKE_SOURCE_DIR}/msg
+  ${CMAKE_SOURCE_DIR}/msg/RPC/proto
+)
+protobuf_generate_cpp(STORAGENODE_PROTO_SRCS STORAGENODE_PROTO_HDRS ${PROTO_SRC})
+
+add_library(storagenode_proto ${STORAGENODE_PROTO_SRCS} ${STORAGENODE_PROTO_HDRS})
+target_include_directories(storagenode_proto
+  PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/msg/RPC
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/msg
+)
+target_link_libraries(storagenode_proto
+  PUBLIC
+    protobuf::libprotobuf
+)
+
+set_target_properties(storagenode_proto PROPERTIES
+  OUTPUT_NAME storagenode_proto
+  POSITION_INDEPENDENT_CODE ON
 )

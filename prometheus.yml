@@ -1,52 +1,22 @@
-# Sample config for Prometheus.
-
 global:
-  scrape_interval:     15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
-  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
-  # scrape_timeout is set to the global default (10s).
+  scrape_interval:     15s
+  evaluation_interval: 15s
 
-  # Attach these labels to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager).
-  external_labels:
-      monitor: 'example'
-
-# Alertmanager configuration
-alerting:
-  alertmanagers:
-  - static_configs:
-    - targets: ['localhost:9093']
-
-# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
-rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
-
-# A scrape configuration containing exactly one endpoint to scrape:
-# Here it's Prometheus itself.
 scrape_configs:
-  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
-  - job_name: 'prometheus'
-
-    # Override the global default and scrape targets from this job every 5 seconds.
-    scrape_interval: 5s
-    scrape_timeout: 5s
-
-    # metrics_path defaults to '/metrics'
-    # scheme defaults to 'http'.
-
+  - job_name: 'mds_rpc_metrics'
+    metrics_path: /rpc.MdsService/GetMetricsProm
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['222.20.95.30:8010']
+        labels: { instance: 'mds-server' }
 
-  - job_name: 'dfs_server'
-    # 可以不写 scrape_interval，默认用 global 的 15s，这里留空也行
-    metrics_path: /brpc_metrics         # ★ brpc 暴露 Prometheus 指标的路径
+  - job_name: 'storage_rpc_metrics'
+    metrics_path: /rpc.StorageService/GetMetricsProm
     static_configs:
-      - targets: ['222.20.95.30:8001']  # ★ 改成你的 brpc 服务地址
-        labels:
-          instance: 'dfs-server-1'
-  - job_name: 'zb_storage_exporter'
-    scrape_interval: 5s
+      - targets: ['222.20.95.30:8011']
+        labels: { instance: 'storage-server' }
+
+  - job_name: 'vfs_rpc_metrics'
+    metrics_path: /rpc.VfsService/GetMetricsProm
     static_configs:
-      - targets: ['222.20.95.30:9200']
-        labels:
-          instance: 'zb-storage'
+      - targets: ['222.20.95.30:8012']
+        labels: { instance: 'vfs-server' }
