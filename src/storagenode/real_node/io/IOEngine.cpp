@@ -199,3 +199,26 @@ IOEngine::Result IOEngine::Read(const std::string& path,
     ReleaseFd(path, flags);
     return r;
 }
+
+IOEngine::Result IOEngine::Truncate(const std::string& path,
+                                    uint64_t size,
+                                    int flags,
+                                    int mode) {
+    Result r{};
+    int err = 0;
+    int fd = AcquireFd(path, flags, /*create_if_missing=*/true, mode, err);
+    if (fd < 0) {
+        r.bytes = -1;
+        r.err = err;
+        return r;
+    }
+    if (::ftruncate(fd, static_cast<off_t>(size)) != 0) {
+        r.bytes = -1;
+        r.err = errno;
+        ReleaseFd(path, flags);
+        return r;
+    }
+    r.bytes = 0;
+    ReleaseFd(path, flags);
+    return r;
+}

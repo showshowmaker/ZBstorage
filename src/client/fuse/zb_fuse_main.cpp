@@ -97,10 +97,13 @@ int fuse_unlink_cb(const char* path) {
 
 int fuse_truncate_cb(const char* path, off_t size) {
     if (!g_client) return -ECOMM;
-    if (size != 0) {
-        return -ENOTSUP;
-    }
-    return g_client->Truncate(path);
+    return g_client->Truncate(path, size);
+}
+
+int fuse_ftruncate_cb(const char* path, off_t size, struct fuse_file_info* fi) {
+    (void)fi;
+    if (!g_client) return -ECOMM;
+    return g_client->Truncate(path, size);
 }
 
 int fuse_utimens_cb(const char* path, const struct timespec ts[2]) {
@@ -164,6 +167,7 @@ struct fuse_operations BuildFuseOps() {
     ops.rmdir = fuse_rmdir_cb;
     ops.unlink = fuse_unlink_cb;
     ops.truncate = fuse_truncate_cb;
+    ops.ftruncate = fuse_ftruncate_cb;
     ops.utimens = fuse_utimens_cb;
     return ops;
 }

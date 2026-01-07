@@ -21,6 +21,11 @@ public:
               storagenode::ReadReply* response,
               ::google::protobuf::Closure* done) override;
 
+    void Truncate(::google::protobuf::RpcController* controller,
+                  const storagenode::TruncateRequest* request,
+                  storagenode::TruncateReply* response,
+                  ::google::protobuf::Closure* done) override;
+
     void UnmountDisk(::google::protobuf::RpcController* controller,
                      const storagenode::UnmountRequest* request,
                      storagenode::UnmountReply* response,

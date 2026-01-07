@@ -32,3 +32,19 @@ void GatewayServiceImpl::Read(::google::protobuf::RpcController* controller,
     }
     dispatcher_->DispatchRead(request, response, static_cast<brpc::Controller*>(controller), done);
 }
+
+void GatewayServiceImpl::Truncate(::google::protobuf::RpcController* controller,
+                                  const storagenode::TruncateRequest* request,
+                                  storagenode::TruncateReply* response,
+                                  ::google::protobuf::Closure* done) {
+    if (!dispatcher_) {
+        if (response) {
+            StatusUtils::SetStatus(response->mutable_status(),
+                                   rpc::STATUS_UNKNOWN_ERROR,
+                                   "Gateway dispatcher not initialized");
+        }
+        if (done) done->Run();
+        return;
+    }
+    dispatcher_->DispatchTruncate(request, response, static_cast<brpc::Controller*>(controller), done);
+}

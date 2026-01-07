@@ -161,6 +161,50 @@ void StorageServiceImpl::Read(::google::protobuf::RpcController* controller,
               << " code=" << response->status().code() << std::endl;
 }
 
+void StorageServiceImpl::Truncate(::google::protobuf::RpcController* controller,
+                                  const storagenode::TruncateRequest* request,
+                                  storagenode::TruncateReply* response,
+                                  ::google::protobuf::Closure* done) {
+    (void)controller;
+    brpc::ClosureGuard guard(done);
+    auto* status = response->mutable_status();
+    if (!ready_) {
+        StatusUtils::SetStatus(status, rpc::STATUS_IO_ERROR, "disk not ready");
+        return;
+    }
+    if (!metadata_mgr_) {
+        StatusUtils::SetStatus(status, rpc::STATUS_INVALID_ARGUMENT, "metadata manager is null");
+        return;
+    }
+    if (!io_engine_) {
+        StatusUtils::SetStatus(status, rpc::STATUS_INVALID_ARGUMENT, "io engine is null");
+        return;
+    }
+    std::cout << "[RealNode] TruncateReq chunk=" << request->chunk_id()
+              << " size=" << request->size() << std::endl;
+
+    std::string path = metadata_mgr_->GetPath(request->chunk_id());
+    if (path.empty()) {
+        path = metadata_mgr_->AllocPath(request->chunk_id());
+        if (path.empty()) {
+            StatusUtils::SetStatus(status, rpc::STATUS_IO_ERROR, "failed to allocate path");
+            return;
+        }
+    }
+
+    int flags = O_WRONLY | O_CREAT;
+    auto res = io_engine_->Truncate(path, request->size(), flags, 0644);
+    if (res.bytes < 0 || res.err != 0) {
+        int err = res.err != 0 ? res.err : EIO;
+        StatusUtils::SetStatus(status, StatusUtils::FromErrno(err),
+                               res.err != 0 ? std::strerror(err) : "truncate failed");
+        return;
+    }
+    Ok(status);
+    std::cout << "[RealNode] TruncateResp chunk=" << request->chunk_id()
+              << " code=" << response->status().code() << std::endl;
+}
+
 void StorageServiceImpl::UnmountDisk(::google::protobuf::RpcController* controller,
                                      const storagenode::UnmountRequest* request,
                                      storagenode::UnmountReply* response,

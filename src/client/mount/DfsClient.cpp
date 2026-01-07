@@ -274,29 +274,47 @@ int DfsClient::Unlink(const std::string& path) {
     return 0;
 }
 
-int DfsClient::Truncate(const std::string& path) {
-    if (!rpc_ || !rpc_->mds()) return -ECOMM;
-    rpc::PathRequest req;
-    rpc::Status resp;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(cfg_.rpc_timeout_ms);
-    req.set_path(path);
-    rpc_->mds()->TruncateFile(&cntl, &req, &resp, nullptr);
-    if (cntl.Failed()) {
-        std::cerr << "[Client] Truncate RPC failed path=" << path << " err=" << cntl.ErrorText() << std::endl;
-        return -ECOMM;
-    }
-    auto code = StatusUtils::NormalizeCode(resp.code());
+int DfsClient::Truncate(const std::string& path, off_t size) {
+    if (!rpc_ || !rpc_->mds() || !rpc_->srm()) return -ECOMM;
+    if (size < 0) return -EINVAL;
+
+    InodeInfo info;
+    auto code = LookupInode(path, info);
     if (code != rpc::STATUS_SUCCESS) {
-        std::cerr << "[Client] Truncate failed path=" << path
-                  << " code=" << static_cast<int>(code)
-                  << " msg=" << resp.message() << std::endl;
         return -StatusToErrno(code);
     }
-    InodeInfo info;
-    if (LookupInode(path, info) == rpc::STATUS_SUCCESS) {
+
+    storagenode::TruncateRequest treq;
+    storagenode::TruncateReply tresp;
+    brpc::Controller tcntl;
+    tcntl.set_timeout_ms(cfg_.rpc_timeout_ms);
+    const std::string& node_id = info.node_id.empty() ? cfg_.default_node_id : info.node_id;
+    treq.set_node_id(node_id);
+    treq.set_chunk_id(static_cast<uint64_t>(info.inode));
+    treq.set_size(static_cast<uint64_t>(size));
+    rpc_->srm()->Truncate(&tcntl, &treq, &tresp, nullptr);
+    if (tcntl.Failed()) {
+        std::cerr << "[Client] Truncate SRM RPC failed path=" << path
+                  << " err=" << tcntl.ErrorText() << std::endl;
+        return -ECOMM;
+    }
+    auto tcode = StatusUtils::NormalizeCode(tresp.status().code());
+    if (tcode != rpc::STATUS_SUCCESS) {
+        std::cerr << "[Client] Truncate failed path=" << path
+                  << " code=" << static_cast<int>(tcode)
+                  << " msg=" << tresp.status().message() << std::endl;
+        return -StatusToErrno(tcode);
+    }
+
+    auto ucode = UpdateRemoteSize(info.inode, static_cast<uint64_t>(size));
+    if (ucode != rpc::STATUS_SUCCESS) {
+        std::cerr << "[Client] UpdateFileSize failed inode=" << info.inode
+                  << " code=" << static_cast<int>(ucode) << std::endl;
+        return -StatusToErrno(ucode);
+    }
+    {
         std::lock_guard<std::mutex> lk(mu_);
-        inode_size_[info.inode] = 0;
+        inode_size_[info.inode] = static_cast<uint64_t>(size);
     }
     return 0;
 }

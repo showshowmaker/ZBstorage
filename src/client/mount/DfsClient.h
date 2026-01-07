@@ -29,7 +29,7 @@ public:
     int Mkdir(const std::string& path, mode_t mode);
     int Rmdir(const std::string& path);
     int Unlink(const std::string& path);
-    int Truncate(const std::string& path);
+    int Truncate(const std::string& path, off_t size);
     int Read(int fd, char* buf, size_t size, off_t offset, ssize_t& out_bytes);
     int Write(int fd, const char* buf, size_t size, off_t offset, ssize_t& out_bytes);
     int Close(int fd);

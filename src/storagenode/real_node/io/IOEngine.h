@@ -25,6 +25,7 @@ public:
 
     Result Write(const std::string& path, const void* data, size_t size, uint64_t offset, int flags, int mode);
     Result Read(const std::string& path, uint64_t offset, size_t length, std::string& out, int flags);
+    Result Truncate(const std::string& path, uint64_t size, int flags, int mode);
 
 private:
     int AcquireFd(const std::string& path, int flags, bool create_if_missing, int mode, int& err);

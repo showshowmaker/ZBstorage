@@ -48,8 +48,20 @@ message ReadReply {
   uint64 checksum = 4;
 }
 
+message TruncateRequest {
+  // Optional: target node id for gateway routing.
+  string node_id = 100;
+  uint64 chunk_id = 1;
+  uint64 size = 2;
+}
+
+message TruncateReply {
+  rpc.Status status = 1;
+}
+
 service StorageService {
   rpc Write(WriteRequest) returns (WriteReply);
   rpc Read(ReadRequest) returns (ReadReply);
+  rpc Truncate(TruncateRequest) returns (TruncateReply);
   rpc UnmountDisk(UnmountRequest) returns (UnmountReply);
 }

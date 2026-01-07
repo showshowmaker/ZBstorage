@@ -16,6 +16,9 @@ public:
     void SimulateRead(const storagenode::ReadRequest* req,
                       storagenode::ReadReply* resp);
 
+    void SimulateTruncate(const storagenode::TruncateRequest* req,
+                          storagenode::TruncateReply* resp);
+
 private:
     void MaybeFail(rpc::Status* status);
     void AddLatency();

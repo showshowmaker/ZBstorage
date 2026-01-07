@@ -51,6 +51,20 @@ void VirtualNodeEngine::SimulateRead(const storagenode::ReadRequest* req,
     FillStatus(resp->mutable_status(), rpc::STATUS_SUCCESS, "");
 }
 
+void VirtualNodeEngine::SimulateTruncate(const storagenode::TruncateRequest* req,
+                                         storagenode::TruncateReply* resp) {
+    if (!resp) {
+        return;
+    }
+    MaybeFail(resp->mutable_status());
+    if (resp->status().code() != rpc::STATUS_SUCCESS) {
+        return;
+    }
+    AddLatency();
+    (void)req;
+    FillStatus(resp->mutable_status(), rpc::STATUS_SUCCESS, "");
+}
+
 void VirtualNodeEngine::MaybeFail(rpc::Status* status) {
     if (!status) {
         return;

@@ -28,6 +28,11 @@ public:
                       brpc::Controller* cntl,
                       ::google::protobuf::Closure* done);
 
+    void DispatchTruncate(const storagenode::TruncateRequest* req,
+                          storagenode::TruncateReply* resp,
+                          brpc::Controller* cntl,
+                          ::google::protobuf::Closure* done);
+
 private:
     struct StubEntry {
         std::unique_ptr<brpc::Channel> channel;
