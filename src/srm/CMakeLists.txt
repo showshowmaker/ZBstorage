@@ -21,9 +21,6 @@ set(SRM_MAIN_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/gateway/GatewayServiceImpl.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/gateway/RequestDispatcher.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/simulation/VirtualNodeEngine.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/virtual/VirtualNodeLedger.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/virtual/InodeBatchMonitor.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/virtual/VirtualNodeController.cpp
   ${CMAKE_SOURCE_DIR}/common/StatusUtils.cpp
   ${CMAKE_SOURCE_DIR}/fs/volume/Volume.cpp
   ${CMAKE_SOURCE_DIR}/fs/block/BlockManager.cpp
@@ -31,8 +28,6 @@ set(SRM_MAIN_SOURCES
   ${CMAKE_SOURCE_DIR}/fs/volume/VolumeManager.cpp
   ${CMAKE_SOURCE_DIR}/fs/volume/VolumeRegistry.cpp
   ${CMAKE_SOURCE_DIR}/srm/storage_manager/StorageResource.cpp
-  ${CMAKE_SOURCE_DIR}/mds/inode/inode.cpp
-  ${CMAKE_SOURCE_DIR}/mds/inode/InodeTimestamp.cpp
   ${CMAKE_SOURCE_DIR}/debug/ZBLog.cpp
 )
 
