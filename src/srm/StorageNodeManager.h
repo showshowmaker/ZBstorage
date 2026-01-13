@@ -34,6 +34,7 @@ public:
     bool GetNode(const std::string& node_id, NodeContext& ctx) const;
     // Optional: pre-register a virtual node with simulation parameters.
     void AddVirtualNode(const std::string& node_id, const SimulationParams& params, uint64_t capacity_bytes = 0);
+    void UpdateVirtualNodeCapacity(const std::string& node_id, uint64_t total_bytes, uint64_t free_bytes);
 
 private:
     void HealthLoop();

@@ -122,6 +122,9 @@ public:
     // @wbl Inode 号
     uint64_t inode; // 64比特inode号
 
+    // 命名空间ID，固定长度32字节（ASCII）
+    std::string namespace_id;
+
     // 四个时间戳
     InodeTimestamp fm_time;   // 文件最后修改时间 file modification time
     InodeTimestamp fa_time;   // 文件最后访问时间 file access time
@@ -154,6 +157,20 @@ public:
      * @param id 块标识。
      */
     void setBlockId(uint16_t id);
+
+    /**
+     * @brief 设置命名空间 ID
+     * @param id 命名空间标识
+     */
+    void setNamespaceId(const std::string& id);
+
+    /**
+     * @brief 获取命名空间 ID
+     * @return 命名空间标识
+     */
+    const std::string& getNamespaceId() const;
+
+    static constexpr size_t kNamespaceIdLen = 32;
 
     /**
      * @brief 设置文件名。

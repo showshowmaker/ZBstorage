@@ -7,6 +7,7 @@
 #include <limits>
 #include <random>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <chrono>
 
@@ -351,6 +352,11 @@ bool InodeStorage::generate_metadata_batch(const InodeStorage::BatchGenerationCo
         inode.setFileType(static_cast<uint8_t>(FileType::Regular));
         inode.setFilePerm(0644);
         inode.setBlockId(block_id_dist(rng));
+        std::ostringstream ns_id;
+        ns_id << std::setw(Inode::kNamespaceIdLen)
+              << std::setfill('0')
+              << node.node_id;
+        inode.setNamespaceId(ns_id.str());
         inode.setVolumeId(volume_for_temperature(temp));
 
         inode.setFilename(build_path_name(inode.inode, temp, config, rng));

@@ -7,7 +7,8 @@ Inode::Inode()
         digest_len(0),
         file_mode{.raw=0},
         file_size{.raw=0},
-        inode(0) {}
+        inode(0),
+        namespace_id(std::string(kNamespaceIdLen, '0')) {}
 
 void Inode::setNodeId(uint16_t id) {
     location_id.fields.node_id = id & 0x3FFF;
@@ -21,6 +22,28 @@ void Inode::setBlockId(uint16_t id) {
     block_id = id;
     im_time = InodeTimestamp();
 }
+
+namespace {
+std::string NormalizeNamespaceId(const std::string& id) {
+    if (id.size() == Inode::kNamespaceIdLen) {
+        return id;
+    }
+    if (id.size() > Inode::kNamespaceIdLen) {
+        return id.substr(id.size() - Inode::kNamespaceIdLen);
+    }
+    return std::string(Inode::kNamespaceIdLen - id.size(), '0') + id;
+}
+}
+
+void Inode::setNamespaceId(const std::string& id) {
+    namespace_id = NormalizeNamespaceId(id);
+    im_time = InodeTimestamp();
+}
+
+const std::string& Inode::getNamespaceId() const {
+    return namespace_id;
+}
+
 void Inode::setFilename(const std::string& name) {
     filename = name;
     filename_len = name.size();
@@ -131,6 +154,8 @@ std::vector<uint8_t> Inode::serialize() const {
     append(&file_mode.raw, sizeof(file_mode.raw));
     append(&file_size.raw, sizeof(file_size.raw));
     append(&inode, sizeof(inode));
+    const std::string ns = NormalizeNamespaceId(namespace_id);
+    append(ns.data(), kNamespaceIdLen);
     append(&fm_time, sizeof(fm_time));
     append(&fa_time, sizeof(fa_time));
     append(&im_time, sizeof(im_time));
@@ -170,6 +195,9 @@ bool Inode::deserialize(const uint8_t* data, size_t& offset, Inode& out, size_t 
     if(!safe_read(&out.file_mode.raw, sizeof(out.file_mode.raw))) return false;
     if(!safe_read(&out.file_size.raw, sizeof(out.file_size.raw))) return false;
     if(!safe_read(&out.inode, sizeof(out.inode))) return false;
+    if(offset + Inode::kNamespaceIdLen > total_size) return false;
+    out.namespace_id.assign(reinterpret_cast<const char*>(data + offset), Inode::kNamespaceIdLen);
+    offset += Inode::kNamespaceIdLen;
     if(!safe_read(&out.fm_time, sizeof(out.fm_time))) return false;
     if(!safe_read(&out.fa_time, sizeof(out.fa_time))) return false;
     if(!safe_read(&out.im_time, sizeof(out.im_time))) return false;

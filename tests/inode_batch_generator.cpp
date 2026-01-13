@@ -134,6 +134,7 @@ void print_sample_inodes(const std::string& file, size_t sample_count) {
         std::cout << "    location: node=" << inode.location_id.fields.node_id
                   << " type=" << node_type_to_string(inode.location_id.fields.node_type)
                   << " raw=" << inode.location_id.raw << std::endl;
+        std::cout << "    namespace_id=" << inode.getNamespaceId() << std::endl;
         std::cout << "    block_id=" << inode.block_id
                   << " filename_len=" << static_cast<int>(inode.filename_len)
                   << " digest_len=" << static_cast<int>(inode.digest_len) << std::endl;

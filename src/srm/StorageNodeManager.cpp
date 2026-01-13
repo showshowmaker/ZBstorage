@@ -147,6 +147,34 @@ void StorageNodeManager::AddVirtualNode(const std::string& node_id, const Simula
     }
 }
 
+void StorageNodeManager::UpdateVirtualNodeCapacity(const std::string& node_id, uint64_t total_bytes, uint64_t free_bytes) {
+    NodeContext ctx;
+    if (!registry_.Get(node_id, ctx)) {
+        return;
+    }
+    if (ctx.type != NodeType::Virtual) {
+        return;
+    }
+    if (free_bytes > total_bytes) {
+        free_bytes = total_bytes;
+    }
+    if (ctx.disks.empty()) {
+        storagenode::DiskInfo d;
+        d.set_mount_point("/virtual");
+        d.set_total_bytes(total_bytes);
+        d.set_free_bytes(free_bytes);
+        ctx.disks.push_back(d);
+    } else {
+        if (ctx.disks[0].mount_point().empty()) {
+            ctx.disks[0].set_mount_point("/virtual");
+        }
+        ctx.disks[0].set_total_bytes(total_bytes);
+        ctx.disks[0].set_free_bytes(free_bytes);
+    }
+    registry_.Upsert(ctx);
+    RegisterToMDS(ctx);
+}
+
 void StorageNodeManager::RegisterToMDS(const NodeContext& ctx) {
     if (!mds_stub_) {
         return;
