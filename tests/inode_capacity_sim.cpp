@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -154,12 +155,36 @@ std::string JsonEscape(const std::string& input) {
     return oss.str();
 }
 
+std::string FormatBytes(uint64_t bytes) {
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
+    double value = static_cast<double>(bytes);
+    size_t unit = 0;
+    while (value >= 1024.0 && unit < (sizeof(units) / sizeof(units[0]) - 1)) {
+        value /= 1024.0;
+        ++unit;
+    }
+    std::ostringstream oss;
+    if (unit == 0) {
+        oss << static_cast<uint64_t>(value) << units[unit];
+    } else {
+        oss << std::fixed << std::setprecision(2) << value << units[unit];
+    }
+    return oss.str();
+}
+
+std::string FormatBytesSigned(int64_t bytes) {
+    if (bytes < 0) {
+        return "-" + FormatBytes(static_cast<uint64_t>(-bytes));
+    }
+    return "+" + FormatBytes(static_cast<uint64_t>(bytes));
+}
+
 void PrintReport(const std::vector<NodeState>& nodes,
                  const Stats& stats,
                  uint32_t limit_nodes,
                  std::unordered_map<std::string, uint64_t>& last_used) {
     std::cout << u8"[\u7edf\u8ba1] inode=" << stats.inodes
-              << u8" \u5b57\u8282=" << stats.bytes
+              << u8" \u5b57\u8282=" << FormatBytes(stats.bytes)
               << u8" \u5931\u8d25=" << stats.failed
               << u8" \u7f3a\u5931\u8282\u70b9=" << stats.missing_node
               << u8" \u5f53\u524d\u6587\u4ef6=" << stats.current_file
@@ -188,10 +213,10 @@ void PrintReport(const std::vector<NodeState>& nodes,
             }
             const int64_t delta = static_cast<int64_t>(dev.used) - static_cast<int64_t>(prev);
             std::cout << u8"  \u8bbe\u5907 " << dev.device_id
-                      << u8" \u5df2\u7528=" << dev.used
-                      << u8"B \u53d8\u5316=" << delta
-                      << u8"B \u5269\u4f59=" << free
-                      << u8"B\n";
+                      << u8" \u5df2\u7528=" << FormatBytes(dev.used)
+                      << u8" \u53d8\u5316=" << FormatBytesSigned(delta)
+                      << u8" \u5269\u4f59=" << FormatBytes(free)
+                      << u8"\n";
             last_used[dev.device_id] = dev.used;
             ++printed_devices;
         };
