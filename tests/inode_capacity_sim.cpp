@@ -28,7 +28,7 @@ struct Options {
     uint32_t hdd_devices_per_node{1};
     uint64_t ssd_capacity_bytes{0};
     uint64_t hdd_capacity_bytes{0};
-    uint32_t report_interval_sec{5};
+    uint32_t report_interval_sec{1};
     uint32_t print_limit_nodes{0};
 };
 
@@ -66,7 +66,7 @@ void PrintUsage(const char* prog) {
               << "  --hdd_devices_per_node <N> HDD devices per HDD/Mix node (default 1)\n"
               << "  --ssd_capacity_bytes <N>   SSD device capacity bytes\n"
               << "  --hdd_capacity_bytes <N>   HDD device capacity bytes\n"
-              << "  --report_interval_sec <N>  report interval in seconds (default 5)\n"
+              << "  --report_interval_sec <N>  report interval in seconds (default 1)\n"
               << "  --max_inodes <N>           max inodes to process (0 = all)\n"
               << "  --print_limit_nodes <N>    limit node prints per report (0 = all)\n"
               << "  --start_file <name>        start from this inode file (name or full path)\n"
@@ -154,36 +154,66 @@ std::string JsonEscape(const std::string& input) {
     return oss.str();
 }
 
-void PrintReport(const std::vector<NodeState>& nodes, const Stats& stats, uint32_t limit_nodes) {
-    std::cout << "[Report] inodes=" << stats.inodes
-              << " bytes=" << stats.bytes
-              << " failed=" << stats.failed
-              << " missing_node=" << stats.missing_node
-              << " current_file=" << stats.current_file
-              << " current_index=" << stats.current_index
-              << " current_node=" << stats.current_node << "\n";
-    uint32_t printed = 0;
+void PrintReport(const std::vector<NodeState>& nodes,
+                 const Stats& stats,
+                 uint32_t limit_nodes,
+                 std::unordered_map<std::string, uint64_t>& last_used) {
+    std::cout << u8"[\u7edf\u8ba1] inode=" << stats.inodes
+              << u8" \u5b57\u8282=" << stats.bytes
+              << u8" \u5931\u8d25=" << stats.failed
+              << u8" \u7f3a\u5931\u8282\u70b9=" << stats.missing_node
+              << u8" \u5f53\u524d\u6587\u4ef6=" << stats.current_file
+              << u8" \u7d22\u5f15=" << stats.current_index
+              << u8" \u8282\u70b9=" << stats.current_node << "\n";
+
+    uint32_t printed_nodes = 0;
+    uint32_t printed_devices = 0;
     for (const auto& node : nodes) {
-        if (limit_nodes > 0 && printed >= limit_nodes) {
-            break;
-        }
-        std::cout << "  node=" << node.node_id
-                  << " type=" << NodeTypeName(node.type) << "\n";
+        bool node_printed = false;
+        auto handle_device = [&](const DeviceState& dev) {
+            const uint64_t free = dev.capacity > dev.used ? dev.capacity - dev.used : 0;
+            const auto it = last_used.find(dev.device_id);
+            const uint64_t prev = it == last_used.end() ? 0 : it->second;
+            if (dev.used == prev) {
+                return;
+            }
+            if (!node_printed) {
+                if (limit_nodes > 0 && printed_nodes >= limit_nodes) {
+                    return;
+                }
+                std::cout << u8"\u8282\u70b9 " << node.node_id
+                          << " (" << NodeTypeName(node.type) << ")\n";
+                node_printed = true;
+                ++printed_nodes;
+            }
+            const int64_t delta = static_cast<int64_t>(dev.used) - static_cast<int64_t>(prev);
+            std::cout << u8"  \u8bbe\u5907 " << dev.device_id
+                      << u8" \u5df2\u7528=" << dev.used
+                      << u8"B \u53d8\u5316=" << delta
+                      << u8"B \u5269\u4f59=" << free
+                      << u8"B\n";
+            last_used[dev.device_id] = dev.used;
+            ++printed_devices;
+        };
+
         for (const auto& dev : node.ssd_devices) {
-            uint64_t free = dev.capacity > dev.used ? dev.capacity - dev.used : 0;
-            std::cout << "    dev=" << dev.device_id
-                      << " used=" << dev.used
-                      << " free=" << free
-                      << " cap=" << dev.capacity << "\n";
+            handle_device(dev);
+            if (limit_nodes > 0 && printed_nodes >= limit_nodes && node_printed) {
+                break;
+            }
+        }
+        if (limit_nodes > 0 && printed_nodes >= limit_nodes && node_printed) {
+            continue;
         }
         for (const auto& dev : node.hdd_devices) {
-            uint64_t free = dev.capacity > dev.used ? dev.capacity - dev.used : 0;
-            std::cout << "    dev=" << dev.device_id
-                      << " used=" << dev.used
-                      << " free=" << free
-                      << " cap=" << dev.capacity << "\n";
+            handle_device(dev);
+            if (limit_nodes > 0 && printed_nodes >= limit_nodes && node_printed) {
+                break;
+            }
         }
-        ++printed;
+    }
+    if (printed_devices == 0) {
+        std::cout << u8"[\u7edf\u8ba1] \u672c\u5468\u671f\u6ca1\u6709\u8bbe\u5907\u5bb9\u91cf\u53d8\u5316\n";
     }
 }
 
@@ -339,6 +369,7 @@ int main(int argc, char** argv) {
     }
 
     Stats stats;
+    std::unordered_map<std::string, uint64_t> last_used;
     auto last_report = std::chrono::steady_clock::now();
     const uint64_t slot_size = InodeStorage::INODE_DISK_SLOT_SIZE;
 
@@ -427,7 +458,7 @@ int main(int argc, char** argv) {
 
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report).count() >= opts.report_interval_sec) {
-                PrintReport(nodes, stats, opts.print_limit_nodes);
+                PrintReport(nodes, stats, opts.print_limit_nodes, last_used);
                 WriteJsonReport(json_out, nodes, stats);
                 last_report = now;
             }
@@ -442,7 +473,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    PrintReport(nodes, stats, opts.print_limit_nodes);
+    PrintReport(nodes, stats, opts.print_limit_nodes, last_used);
     WriteJsonReport(json_out, nodes, stats);
     return 0;
 }
