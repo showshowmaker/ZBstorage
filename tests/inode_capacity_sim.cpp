@@ -103,6 +103,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.max_inodes = std::stoull(argv[++i]);
         } else if (arg == "--print_limit_nodes" && i + 1 < argc) {
             opts.print_limit_nodes = static_cast<uint32_t>(std::stoul(argv[++i]));
+        } else if (arg == "--max_inodes_per_sec" && i + 1 < argc) {
+            opts.max_inodes_per_sec = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--start_file" && i + 1 < argc) {
             opts.start_file = argv[++i];
         } else if (arg == "--start_index" && i + 1 < argc) {

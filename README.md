@@ -103,11 +103,12 @@ fio --name=zbfs \
 
 ./tests/build/test_inode_capacity_sim \
   --inode_dir /mnt/md0/inodeNS \
-  --json_log /mnt/md0/Projects/ZBStorage/inode_capacity_log.json \
+  --json_log /mnt/md0/Projects/ZBStorage/log/inode_capacity_log.json \
   --ssd_nodes 1001 --hdd_nodes 1001 --mix_nodes 1001 \
   --ssd_devices_per_node 1 --hdd_devices_per_node 1 \
   --ssd_capacity_bytes $((350*1024*1024*1024*1024)) \
   --hdd_capacity_bytes $((50*1024*1024*1024*1024)) \
+  --max_inodes_per_sec 50000 \
   --report_interval_sec 3 \
   --start_file inode_chunk_0.bin \
   --start_index 0
