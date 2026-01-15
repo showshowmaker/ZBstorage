@@ -187,13 +187,13 @@ void PrintReport(const std::vector<NodeState>& nodes,
                  const Stats& stats,
                  uint32_t limit_nodes,
                  std::unordered_map<std::string, uint64_t>& last_used) {
-    std::cout << u8"[\u7edf\u8ba1] inode=" << stats.inodes
-              << u8" \u5b57\u8282=" << FormatBytes(stats.bytes)
+    std::cout << u8"[\u8fdb\u5ea6] \u5df2\u5904\u7406inode=" << stats.inodes
+              << u8" \u603b\u6a21\u62df\u5199\u5165=" << FormatBytes(stats.bytes)
               << u8" \u5931\u8d25=" << stats.failed
               << u8" \u7f3a\u5931\u8282\u70b9=" << stats.missing_node
-              << u8" \u5f53\u524d\u6587\u4ef6=" << stats.current_file
+              << u8" | \u5f53\u524d\u6587\u4ef6=" << stats.current_file
               << u8" \u7d22\u5f15=" << stats.current_index
-              << u8" \u8282\u70b9=" << stats.current_node << "\n";
+              << u8" \u6620\u5c04\u8282\u70b9=" << stats.current_node << "\n";
 
     uint32_t printed_nodes = 0;
     uint32_t printed_devices = 0;
@@ -211,15 +211,15 @@ void PrintReport(const std::vector<NodeState>& nodes,
                     return;
                 }
                 std::cout << u8"\u8282\u70b9 " << node.node_id
-                          << " (" << NodeTypeName(node.type) << ")\n";
+                          << " (" << NodeTypeName(node.type) << ") \u672c\u5468\u671f\u6709\u5bb9\u91cf\u53d8\u5316:\n";
                 node_printed = true;
                 ++printed_nodes;
             }
             const int64_t delta = static_cast<int64_t>(dev.used) - static_cast<int64_t>(prev);
             std::cout << u8"  \u8bbe\u5907 " << dev.device_id
-                      << u8" \u5df2\u7528=" << FormatBytes(dev.used)
-                      << u8" \u53d8\u5316=" << FormatBytesSigned(delta)
-                      << u8" \u5269\u4f59=" << FormatBytes(free)
+                      << u8" \u5f53\u524d\u5df2\u7528=" << FormatBytes(dev.used)
+                      << u8"\uff0c\u672c\u5468\u671f\u589e\u52a0=" << FormatBytesSigned(delta)
+                      << u8"\uff0c\u5269\u4f59\u53ef\u7528=" << FormatBytes(free)
                       << u8"\n";
             last_used[dev.device_id] = dev.used;
             ++printed_devices;
@@ -242,7 +242,7 @@ void PrintReport(const std::vector<NodeState>& nodes,
         }
     }
     if (printed_devices == 0) {
-        std::cout << u8"[\u7edf\u8ba1] \u672c\u5468\u671f\u6ca1\u6709\u8bbe\u5907\u5bb9\u91cf\u53d8\u5316\n";
+        std::cout << u8"[\u8fdb\u5ea6] \u672c\u5468\u671f\u6ca1\u6709\u8bbe\u5907\u5bb9\u91cf\u53d8\u5316\uff0c\u53ef\u80fd\u5904\u7406\u901f\u5ea6\u8f83\u6162\u6216\u672a\u547d\u4e2d\u8be5\u8282\u70b9\u3002\n";
     }
 }
 
