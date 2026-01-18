@@ -1,4 +1,4 @@
-﻿#include <chrono>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -59,6 +59,34 @@ struct Stats {
     uint64_t missing_node{0};
 };
 
+const char* kColorMenu = "\033[36m";
+const char* kColorPrompt = "\033[33m";
+const char* kColorInput = "\033[35m";
+const char* kColorResult = "\033[32m";
+const char* kColorError = "\033[31m";
+const char* kColorReset = "\033[0m";
+
+bool UseColor() {
+    return ::isatty(STDOUT_FILENO) != 0;
+}
+
+class ColorScope {
+public:
+    explicit ColorScope(const char* color) : enabled_(UseColor()) {
+        if (enabled_) {
+            std::cout << color;
+        }
+    }
+    ~ColorScope() {
+        if (enabled_) {
+            std::cout << kColorReset;
+        }
+    }
+
+private:
+    bool enabled_;
+};
+
 std::string FormatBytes(uint64_t bytes) {
     const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
     double value = static_cast<double>(bytes);
@@ -77,9 +105,19 @@ std::string FormatBytes(uint64_t bytes) {
 }
 
 std::string PromptLine(const std::string& tip) {
+    if (UseColor()) {
+        std::cout << kColorPrompt;
+    }
     std::cout << tip;
+    if (UseColor()) {
+        std::cout << kColorInput;
+    }
+    std::cout.flush();
     std::string line;
     std::getline(std::cin, line);
+    if (UseColor()) {
+        std::cout << kColorReset;
+    }
     return line;
 }
 
@@ -92,7 +130,8 @@ uint64_t PromptUint64(const std::string& tip, uint64_t default_value = 0) {
         try {
             return std::stoull(line);
         } catch (...) {
-            std::cout << u8"输入无效，请重新输入。\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"???????????\n";
         }
     }
 }
@@ -211,7 +250,8 @@ public:
     bool Init() {
         InitSimState();
         if (!FLAGS_mount_point.empty() && !fs::exists(FLAGS_mount_point)) {
-            std::cout << u8"提示：挂载点不存在或未挂载：" << FLAGS_mount_point << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"??????????????" << FLAGS_mount_point << "\n";
         }
         return true;
     }
@@ -219,7 +259,7 @@ public:
     void RunMenu() {
         while (true) {
             PrintMenu();
-            std::string choice = PromptLine(u8"请选择操作（输入 q 退出）：");
+            std::string choice = PromptLine(u8"???????? q ????");
             if (choice == "q" || choice == "Q") {
                 break;
             }
@@ -314,7 +354,8 @@ private:
                 }
             }
             if (!found) {
-                std::cout << u8"起始文件未找到：" << FLAGS_start_file << "\n";
+                ColorScope scope(kColorError);
+                std::cout << u8"????????" << FLAGS_start_file << "\n";
             }
         }
     }
@@ -357,7 +398,8 @@ private:
 
     bool SimBackup(uint64_t count) {
         if (bin_files_.empty()) {
-            std::cout << u8"找不到 inode 批量文件，请设置 --inode_dir。\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"??? inode ???????? --inode_dir?\n";
             return false;
         }
 
@@ -369,7 +411,8 @@ private:
             const auto& path = bin_files_[current_bin_file_idx_];
             std::ifstream in(path, std::ios::binary);
             if (!in.is_open()) {
-                std::cout << u8"无法打开 inode 文件：" << path.string() << "\n";
+                ColorScope scope(kColorError);
+                std::cout << u8"???? inode ???" << path.string() << "\n";
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
                 continue;
@@ -384,7 +427,8 @@ private:
 
             const uint64_t slot_size = DetectSlotSize(in, static_cast<uint64_t>(total_bytes));
             if (slot_size == 0) {
-                std::cout << u8"无法识别 inode 槽大小，跳过文件：" << path.string() << "\n";
+                ColorScope scope(kColorError);
+                std::cout << u8"???? inode ?????????" << path.string() << "\n";
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
                 continue;
@@ -404,7 +448,8 @@ private:
                 in.read(reinterpret_cast<char*>(slot.data()), static_cast<std::streamsize>(slot_size));
                 if (in.gcount() != static_cast<std::streamsize>(slot_size)) {
                     current_file_offset_ = total_slots;
-                    std::cout << u8"读取到文件尾或读取失败，切换到下一个文件：" << path.filename().string() << "\n";
+                    ColorScope scope(kColorError);
+                    std::cout << u8"?????????????????????" << path.filename().string() << "\n";
                     break;
                 }
                 size_t off = 0;
@@ -431,20 +476,25 @@ private:
 
         auto end = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        std::cout << u8"已经成功备份 " << processed << u8" 个文件。\n";
-        std::cout << u8"执行时间：" << elapsed / 1000.0 << u8" 秒。\n";
-        std::cout << u8"当前已处理文件数量：" << sim_stats_.inodes
-                  << u8"，累计模拟写入：" << FormatBytes(sim_stats_.bytes) << "\n";
-        std::cout << u8"本次失败解析数量：" << failed << "\n";
+        {
+            ColorScope scope(kColorResult);
+            std::cout << u8"?????? " << processed << u8" ????\n";
+            std::cout << u8"?????" << elapsed / 1000.0 << u8" ??\n";
+            std::cout << u8"??????????" << sim_stats_.inodes
+                      << u8"????????" << FormatBytes(sim_stats_.bytes) << "\n";
+            std::cout << u8"?????????" << failed << "\n";
+        }
         if (sim_stats_.inodes == 0 && failed > 0) {
-            std::cout << u8"提示：当前文件全部解析失败，请确认 inode 批量文件版本与工具一致。\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"????????????????? inode ????????????\n";
         }
         return true;
     }
 
     void SimCountFileNum() {
         if (sim_stats_.inodes == 0) {
-            std::cout << u8"当前没有已处理的文件。\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"???????????\n";
             return;
         }
         double avg = static_cast<double>(sim_stats_.bytes) / static_cast<double>(sim_stats_.inodes);
@@ -455,9 +505,10 @@ private:
             for (const auto& dev : node.hdd_devices) used += dev.used;
             if (used > 0) ++used_nodes;
         }
-        std::cout << u8"系统中包含文件数量为：" << sim_stats_.inodes << "\n";
-        std::cout << u8"平均文件大小为：" << FormatBytes(static_cast<uint64_t>(avg)) << "\n";
-        std::cout << u8"使用存储节点数量为：" << used_nodes << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"???????????" << sim_stats_.inodes << "\n";
+        std::cout << u8"????????" << FormatBytes(static_cast<uint64_t>(avg)) << "\n";
+        std::cout << u8"??????????" << used_nodes << "\n";
     }
 
     void SimQueryFile(const std::string& path) {
@@ -466,48 +517,54 @@ private:
         if (size < 4096) size += 4096;
         double delay_ms = (static_cast<double>(size) / (100.0 * 1024 * 1024)) * 10.0;
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(delay_ms)));
-        std::cout << u8"SimTrue=1 表示从仿真系统查询。\n";
-        std::cout << u8"文件=" << path
-                  << u8"，模拟大小=" << FormatBytes(size)
-                  << u8"，模拟耗时=" << delay_ms << "ms\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"SimTrue=1 ??????????\n";
+        std::cout << u8"??=" << path
+                  << u8"?????=" << FormatBytes(size)
+                  << u8"?????=" << delay_ms << "ms\n";
     }
 
     void SimWriteFile(const std::string& source_path) {
         std::error_code ec;
         uint64_t size = fs::file_size(source_path, ec);
         if (ec) {
-            std::cout << u8"读取源文件失败：" << ec.message() << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"????????" << ec.message() << "\n";
             return;
         }
         double seconds = static_cast<double>(size) / (50.0 * 1024 * 1024);
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
         std::string node_id = sim_nodes_.empty() ? "none" : sim_nodes_[size % sim_nodes_.size()].node_id;
-        std::cout << u8"SimTrue=1 表示仿真写入。\n";
-        std::cout << u8"写入大小=" << FormatBytes(size)
-                  << u8"，写入存储节点ID=" << node_id << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"SimTrue=1 ???????\n";
+        std::cout << u8"????=" << FormatBytes(size)
+                  << u8"???????ID=" << node_id << "\n";
     }
 
     void RealQueryFile(const std::string& path) {
         std::string real_path = MakeMountedPath(path);
         struct stat st;
         if (::stat(real_path.c_str(), &st) != 0) {
-            std::cout << u8"[ERROR] 真实查询失败：" << real_path
-                      << u8"，错误=" << std::strerror(errno) << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"[ERROR] ???????" << real_path
+                      << u8"???=" << std::strerror(errno) << "\n";
             return;
         }
-        std::cout << u8"==== 操作结果 ====\n";
-        std::cout << u8"SimTrue=0 表示真实查询。\n";
-        std::cout << u8"文件=" << real_path
-                  << u8"，大小=" << st.st_size << u8" bytes"
-                  << u8"，权限=" << st.st_mode << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"==== ???? ====\n";
+        std::cout << u8"SimTrue=0 ???????\n";
+        std::cout << u8"??=" << real_path
+                  << u8"???=" << st.st_size << u8" bytes"
+                  << u8"???=" << st.st_mode << "\n";
     }
 
     void RealWriteContent(const std::string& dest_path, const std::string& content) {
         std::string real_dest = MakeMountedPath(dest_path);
         int out_fd = ::open(real_dest.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (out_fd < 0) {
-            std::cout << u8"[ERROR] 打开目标文件失败：" << real_dest
-                      << u8"，错误=" << std::strerror(errno) << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"[ERROR] ?????????" << real_dest
+                      << u8"???=" << std::strerror(errno) << "\n";
             return;
         }
         size_t offset = 0;
@@ -515,30 +572,34 @@ private:
         while (offset < total) {
             ssize_t n = ::write(out_fd, content.data() + offset, total - offset);
             if (n <= 0) {
-                std::cout << u8"[ERROR] 写入失败，错误=" << std::strerror(errno) << "\n";
+                ColorScope scope(kColorError);
+                std::cout << u8"[ERROR] ???????=" << std::strerror(errno) << "\n";
                 ::close(out_fd);
                 return;
             }
             offset += static_cast<size_t>(n);
         }
         ::close(out_fd);
-        std::cout << u8"==== 操作结果 ====\n";
-        std::cout << u8"SimTrue=0 表示真实写入。\n";
-        std::cout << u8"目标文件=" << real_dest
-                  << u8"，写入字节数=" << total << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"==== ???? ====\n";
+        std::cout << u8"SimTrue=0 ???????\n";
+        std::cout << u8"????=" << real_dest
+                  << u8"??????=" << total << "\n";
     }
 
     void RealReadFile(const std::string& path) {
         std::string real_path = MakeMountedPath(path);
         int fd = ::open(real_path.c_str(), O_RDONLY);
         if (fd < 0) {
-            std::cout << u8"[ERROR] 读取失败：" << real_path
-                      << u8"，错误=" << std::strerror(errno) << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"[ERROR] ?????" << real_path
+                      << u8"???=" << std::strerror(errno) << "\n";
             return;
         }
         struct stat st;
         if (fstat(fd, &st) != 0) {
-            std::cout << u8"[ERROR] 获取文件大小失败：" << std::strerror(errno) << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"[ERROR] ?????????" << std::strerror(errno) << "\n";
             ::close(fd);
             return;
         }
@@ -552,40 +613,45 @@ private:
         std::vector<char> buf(static_cast<size_t>(to_read));
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n < 0) {
-            std::cout << u8"[ERROR] 读取失败，错误=" << std::strerror(errno) << "\n";
+            ColorScope scope(kColorError);
+            std::cout << u8"[ERROR] ???????=" << std::strerror(errno) << "\n";
             ::close(fd);
             return;
         }
         ::close(fd);
-        std::cout << u8"==== 操作结果 ====\n";
-        std::cout << u8"SimTrue=0 表示真实读取。\n";
-        std::cout << u8"文件=" << real_path << u8"，读取字节数=" << n;
-        if (truncated) {
-            std::cout << u8"（内容过大，已截断）";
-        }
-        std::cout << "\n";
-        if (n > 0) {
-            std::string out(buf.data(), buf.data() + n);
-            std::cout << u8"内容：\n" << out << "\n";
+        {
+            ColorScope scope(kColorResult);
+            std::cout << u8"==== ???? ====\n";
+            std::cout << u8"SimTrue=0 ???????\n";
+            std::cout << u8"??=" << real_path << u8"??????=" << n;
+            if (truncated) {
+                std::cout << u8"??????????";
+            }
+            std::cout << "\n";
+            if (n > 0) {
+                std::string out(buf.data(), buf.data() + n);
+                std::cout << u8"???\n" << out << "\n";
+            }
         }
     }
 
     void PrintMenu() {
+        ColorScope scope(kColorMenu);
         std::cout << "\n";
-        std::cout << u8"========== ZBSystemTest 菜单 ==========\n";
-        std::cout << u8"1) 批量备份（仿真）\n";
-        std::cout << u8"2) 统计文件数量（仿真）\n";
-        std::cout << u8"3) 查询文件（仿真）\n";
-        std::cout << u8"4) 写入文件（仿真）\n";
-        std::cout << u8"5) 统计总容量（仿真）\n";
-        std::cout << u8"6) 统计节点数量（仿真）\n";
-        std::cout << u8"7) 统计光盘库数量（仿真）\n";
-        std::cout << u8"8) 统计光盘数量（仿真）\n";
-        std::cout << u8"9) 真实查询文件（POSIX）\n";
-        std::cout << u8"10) 真实写入文件（POSIX，输入路径+内容）\n";
-        std::cout << u8"11) 真实读取文件（POSIX，输入路径）\n";
-        std::cout << u8"q) 退出\n";
-        std::cout << u8"当前挂载点：" << FLAGS_mount_point << "\n";
+        std::cout << u8"========== ZBSystemTest ?? ==========\n";
+        std::cout << u8"1) ????????\n";
+        std::cout << u8"2) ??????????\n";
+        std::cout << u8"3) ????????\n";
+        std::cout << u8"4) ????????\n";
+        std::cout << u8"5) ?????????\n";
+        std::cout << u8"6) ??????????\n";
+        std::cout << u8"7) ???????????\n";
+        std::cout << u8"8) ??????????\n";
+        std::cout << u8"9) ???????POSIX?\n";
+        std::cout << u8"10) ???????POSIX?????+???\n";
+        std::cout << u8"11) ???????POSIX??????\n";
+        std::cout << u8"q) ??\n";
+        std::cout << u8"??????" << FLAGS_mount_point << "\n";
     }
 
     void CountTotalCapacityStorage() {
@@ -596,10 +662,11 @@ private:
             for (const auto& dev : node.hdd_devices) hdd += dev.capacity;
         }
         uint64_t optical = 0;
-        std::cout << u8"固态盘容量：" << FormatBytes(ssd) << "\n";
-        std::cout << u8"磁盘容量：" << FormatBytes(hdd) << "\n";
-        std::cout << u8"光存储容量：" << FormatBytes(optical) << "\n";
-        std::cout << u8"总容量：" << FormatBytes(ssd + hdd + optical) << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"??????" << FormatBytes(ssd) << "\n";
+        std::cout << u8"?????" << FormatBytes(hdd) << "\n";
+        std::cout << u8"??????" << FormatBytes(optical) << "\n";
+        std::cout << u8"????" << FormatBytes(ssd + hdd + optical) << "\n";
     }
 
     void CountStorageNodeNum() {
@@ -613,22 +680,25 @@ private:
             }
         }
         uint64_t optical_nodes = 0;
-        std::cout << u8"磁盘节点数量：" << hdd_nodes << "\n";
-        std::cout << u8"混合节点数量：" << mix_nodes << "\n";
-        std::cout << u8"光盘库节点数量：" << optical_nodes << "\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"???????" << hdd_nodes << "\n";
+        std::cout << u8"???????" << mix_nodes << "\n";
+        std::cout << u8"????????" << optical_nodes << "\n";
     }
 
     void CountDiscLibNum() {
-        std::cout << u8"光盘库数量：0\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"??????0\n";
     }
 
     void CountDiscNum() {
-        std::cout << u8"光盘数量：0\n";
+        ColorScope scope(kColorResult);
+        std::cout << u8"?????0\n";
     }
 
     void HandleMenu(const std::string& choice) {
         if (choice == "1") {
-            uint64_t count = PromptUint64(u8"请输入要备份的文件数量：");
+            uint64_t count = PromptUint64(u8"????????????");
             SimBackup(count);
             return;
         }
@@ -637,14 +707,14 @@ private:
             return;
         }
         if (choice == "3") {
-            std::string path = PromptLine(u8"请输入要查询的文件路径（如 /path/file）：");
+            std::string path = PromptLine(u8"????????????? /path/file??");
             if (!path.empty()) {
                 SimQueryFile(path);
             }
             return;
         }
         if (choice == "4") {
-            std::string src = PromptLine(u8"请输入本地源文件路径：");
+            std::string src = PromptLine(u8"???????????");
             if (!src.empty()) {
                 SimWriteFile(src);
             }
@@ -667,26 +737,27 @@ private:
             return;
         }
         if (choice == "9") {
-            std::string path = PromptLine(u8"请输入要查询的文件路径（挂载点内，如 /hello.txt）：");
+            std::string path = PromptLine(u8"?????????????????? /hello.txt??");
             if (!path.empty()) {
                 RealQueryFile(path);
             }
             return;
         }
         if (choice == "10") {
-            std::string dest = PromptLine(u8"请输入写入路径（挂载点内，如 /hello.txt）：");
+            std::string dest = PromptLine(u8"?????????????? /hello.txt??");
             if (dest.empty()) return;
-            std::string content = PromptLine(u8"请输入要写入的内容（单行）：");
+            std::string content = PromptLine(u8"??????????????");
             RealWriteContent(dest, content);
             return;
         }
         if (choice == "11") {
-            std::string path = PromptLine(u8"请输入要读取的文件路径（挂载点内，如 /hello.txt）：");
+            std::string path = PromptLine(u8"?????????????????? /hello.txt??");
             if (path.empty()) return;
             RealReadFile(path);
             return;
         }
-        std::cout << u8"未知选项：" << choice << "\n";
+        ColorScope scope(kColorError);
+        std::cout << u8"?????" << choice << "\n";
     }
 
     std::vector<NodeState> sim_nodes_;
