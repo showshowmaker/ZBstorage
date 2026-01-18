@@ -130,6 +130,45 @@ void Consume(std::vector<DeviceState>& devices, uint64_t& remaining) {
     }
 }
 
+uint64_t DetectSlotSize(std::ifstream& in, const fs::path& path, uint64_t file_size) {
+    std::vector<uint64_t> candidates = {
+        InodeStorage::INODE_DISK_SLOT_SIZE,
+        1024,
+        2048,
+        4096
+    };
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    uint64_t max_candidate = 0;
+    for (auto v : candidates) {
+        if (v > max_candidate) max_candidate = v;
+    }
+    uint64_t read_size = max_candidate;
+    if (file_size > 0 && file_size < read_size) {
+        read_size = file_size;
+    }
+    if (read_size == 0) {
+        return 0;
+    }
+    std::vector<uint8_t> buf(static_cast<size_t>(read_size));
+    in.clear();
+    in.seekg(0, std::ios::beg);
+    in.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+    std::streamsize got = in.gcount();
+    if (got <= 0) {
+        return 0;
+    }
+    for (auto candidate : candidates) {
+        if (candidate > static_cast<uint64_t>(got)) {
+            continue;
+        }
+        size_t off = 0;
+        Inode inode;
+        if (Inode::deserialize(buf.data(), off, inode, static_cast<size_t>(candidate))) {
+            return candidate;
+        }
+    }
+    return 0;
+}
 class SystemTester {
 public:
     bool Init() {
@@ -279,14 +318,14 @@ private:
         return true;
     }
 
-    bool SimBackup(uint64_t count) {
+        bool SimBackup(uint64_t count) {
         if (bin_files_.empty()) {
             std::cout << u8"找不到 inode 批量文件，请设置 --inode_dir。\n";
             return false;
         }
 
-        const uint64_t slot_size = InodeStorage::INODE_DISK_SLOT_SIZE;
         uint64_t processed = 0;
+        uint64_t failed = 0;
         auto start = std::chrono::steady_clock::now();
 
         while (processed < count && current_bin_file_idx_ < bin_files_.size()) {
@@ -305,12 +344,22 @@ private:
                 current_file_offset_ = 0;
                 continue;
             }
+
+            const uint64_t slot_size = DetectSlotSize(in, path, static_cast<uint64_t>(total_bytes));
+            if (slot_size == 0) {
+                std::cout << u8"无法识别 inode 槽大小，跳过文件：" << path.string() << "\n";
+                ++current_bin_file_idx_;
+                current_file_offset_ = 0;
+                continue;
+            }
+
             const uint64_t total_slots = static_cast<uint64_t>(total_bytes) / slot_size;
             if (current_file_offset_ >= total_slots) {
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
                 continue;
             }
+            in.clear();
             in.seekg(static_cast<std::streamoff>(current_file_offset_ * slot_size), std::ios::beg);
 
             std::vector<uint8_t> slot(static_cast<size_t>(slot_size));
@@ -321,8 +370,9 @@ private:
                 }
                 size_t off = 0;
                 Inode inode;
-                if (!Inode::deserialize(slot.data(), off, inode, slot_size)) {
+                if (!Inode::deserialize(slot.data(), off, inode, static_cast<size_t>(slot_size))) {
                     ++sim_stats_.failed;
+                    ++failed;
                     ++processed;
                     ++current_file_offset_;
                     continue;
@@ -346,6 +396,10 @@ private:
         std::cout << u8"执行时间：" << elapsed / 1000.0 << u8" 秒。\n";
         std::cout << u8"当前已处理文件数量：" << sim_stats_.inodes
                   << u8"，累计模拟写入：" << FormatBytes(sim_stats_.bytes) << "\n";
+        std::cout << u8"本次失败解析数量：" << failed << "\n";
+        if (sim_stats_.inodes == 0 && failed > 0) {
+            std::cout << u8"提示：当前文件全部解析失败，请确认 inode 批量文件版本与工具一致。\n";
+        }
         return true;
     }
 
