@@ -1,30 +1,31 @@
-#include <chrono>
+﻿#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
-#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <sys/stat.h>
 
+#include <cerrno>
+#include <cstring>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <gflags/gflags.h>
 
-#include "client/mount/DfsClient.h"
-#include "client/mount/MountConfig.h"
 #include "mds/inode/InodeStorage.h"
 
 namespace fs = std::filesystem;
 
-DEFINE_string(mds_addr, "127.0.0.1:8010", "MDS address host:port");
-DEFINE_string(srm_addr, "127.0.0.1:9100", "SRM address host:port");
+DEFINE_string(mds_addr, "127.0.0.1:8010", "MDS address host:port (unused in posix mode)");
+DEFINE_string(srm_addr, "127.0.0.1:9100", "SRM address host:port (unused in posix mode)");
+DEFINE_string(mount_point, "/mnt/zbstorage", "FUSE mount point for POSIX operations");
 DEFINE_string(inode_dir, "", "Directory holding inode batch .bin files");
 DEFINE_string(start_file, "", "Start inode batch file (name or full path)");
 DEFINE_uint64(start_index, 0, "Start inode index within start_file");
@@ -35,8 +36,6 @@ DEFINE_uint32(ssd_devices_per_node, 1, "SSD devices per SSD/Mix node");
 DEFINE_uint32(hdd_devices_per_node, 1, "HDD devices per HDD/Mix node");
 DEFINE_uint64(ssd_capacity_bytes, 0, "SSD device capacity bytes");
 DEFINE_uint64(hdd_capacity_bytes, 0, "HDD device capacity bytes");
-DEFINE_bool(default_sim, true, "Default to simulation for commands");
-DEFINE_string(command, "", "Run a single command and exit (e.g. \"backup 1000 sim\")");
 
 namespace {
 
@@ -60,16 +59,6 @@ struct Stats {
     uint64_t missing_node{0};
 };
 
-std::vector<std::string> SplitArgs(const std::string& line) {
-    std::vector<std::string> out;
-    std::istringstream iss(line);
-    std::string token;
-    while (iss >> token) {
-        out.push_back(token);
-    }
-    return out;
-}
-
 std::string FormatBytes(uint64_t bytes) {
     const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
     double value = static_cast<double>(bytes);
@@ -85,6 +74,43 @@ std::string FormatBytes(uint64_t bytes) {
         oss << std::fixed << std::setprecision(2) << value << units[unit];
     }
     return oss.str();
+}
+
+std::string PromptLine(const std::string& tip) {
+    std::cout << tip;
+    std::string line;
+    std::getline(std::cin, line);
+    return line;
+}
+
+uint64_t PromptUint64(const std::string& tip, uint64_t default_value = 0) {
+    while (true) {
+        std::string line = PromptLine(tip);
+        if (line.empty()) {
+            return default_value;
+        }
+        try {
+            return std::stoull(line);
+        } catch (...) {
+            std::cout << u8"输入无效，请重新输入。\n";
+        }
+    }
+}
+
+std::string MakeMountedPath(const std::string& input) {
+    if (input.empty()) {
+        return FLAGS_mount_point;
+    }
+    if (!FLAGS_mount_point.empty() && FLAGS_mount_point.back() == '/') {
+        if (!input.empty() && input.front() == '/') {
+            return FLAGS_mount_point + input.substr(1);
+        }
+        return FLAGS_mount_point + input;
+    }
+    if (!input.empty() && input.front() == '/') {
+        return FLAGS_mount_point + input;
+    }
+    return FLAGS_mount_point + "/" + input;
 }
 
 bool MatchesStartFile(const fs::path& path, const std::string& start) {
@@ -107,54 +133,25 @@ void Consume(std::vector<DeviceState>& devices, uint64_t& remaining) {
 class SystemTester {
 public:
     bool Init() {
-        InitRealClient();
         InitSimState();
+        if (!FLAGS_mount_point.empty() && !fs::exists(FLAGS_mount_point)) {
+            std::cout << u8"提示：挂载点不存在或未挂载：" << FLAGS_mount_point << "\n";
+        }
         return true;
     }
 
-    void RunInteractive() {
-        std::cout << "ZBSystemTest ready. Type 'help' for commands.\n";
-        std::string line;
+    void RunMenu() {
         while (true) {
-            std::cout << "> ";
-            if (!std::getline(std::cin, line)) {
+            PrintMenu();
+            std::string choice = PromptLine(u8"请选择操作（输入 q 退出）：");
+            if (choice == "q" || choice == "Q") {
                 break;
             }
-            auto args = SplitArgs(line);
-            if (args.empty()) {
-                continue;
-            }
-            if (args[0] == "exit" || args[0] == "quit") {
-                break;
-            }
-            RunCommand(args);
+            HandleMenu(choice);
         }
-    }
-
-    void RunOneShot(const std::string& cmd) {
-        auto args = SplitArgs(cmd);
-        if (args.empty()) {
-            std::cerr << "Empty command\n";
-            return;
-        }
-        RunCommand(args);
     }
 
 private:
-    void InitRealClient() {
-        MountConfig cfg;
-        cfg.mds_addr = FLAGS_mds_addr;
-        cfg.srm_addr = FLAGS_srm_addr;
-        cfg.default_node_id = "node-1";
-        real_client_ = std::make_shared<DfsClient>(cfg);
-        if (!real_client_->Init()) {
-            real_ready_ = false;
-            std::cerr << "Real client init failed, real mode disabled.\n";
-        } else {
-            real_ready_ = true;
-        }
-    }
-
     void InitSimState() {
         InitSimNodes();
         if (!FLAGS_inode_dir.empty()) {
@@ -241,7 +238,7 @@ private:
                 }
             }
             if (!found) {
-                std::cerr << "Start file not found: " << FLAGS_start_file << "\n";
+                std::cout << u8"起始文件未找到：" << FLAGS_start_file << "\n";
             }
         }
     }
@@ -284,7 +281,7 @@ private:
 
     bool SimBackup(uint64_t count) {
         if (bin_files_.empty()) {
-            std::cerr << "No inode batch files loaded (check --inode_dir).\n";
+            std::cout << u8"找不到 inode 批量文件，请设置 --inode_dir。\n";
             return false;
         }
 
@@ -296,7 +293,7 @@ private:
             const auto& path = bin_files_[current_bin_file_idx_];
             std::ifstream in(path, std::ios::binary);
             if (!in.is_open()) {
-                std::cerr << "Failed to open inode file: " << path.string() << "\n";
+                std::cout << u8"无法打开 inode 文件：" << path.string() << "\n";
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
                 continue;
@@ -345,16 +342,16 @@ private:
 
         auto end = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        std::cout << "Backup done. Inodes=" << processed
-                  << ", elapsed=" << elapsed / 1000.0 << "s\n";
-        std::cout << "Total files=" << sim_stats_.inodes
-                  << ", total bytes=" << FormatBytes(sim_stats_.bytes) << "\n";
+        std::cout << u8"已经成功备份 " << processed << u8" 个文件。\n";
+        std::cout << u8"执行时间：" << elapsed / 1000.0 << u8" 秒。\n";
+        std::cout << u8"当前已处理文件数量：" << sim_stats_.inodes
+                  << u8"，累计模拟写入：" << FormatBytes(sim_stats_.bytes) << "\n";
         return true;
     }
 
     void SimCountFileNum() {
         if (sim_stats_.inodes == 0) {
-            std::cout << "No simulated files yet.\n";
+            std::cout << u8"当前没有已处理的文件。\n";
             return;
         }
         double avg = static_cast<double>(sim_stats_.bytes) / static_cast<double>(sim_stats_.inodes);
@@ -365,9 +362,9 @@ private:
             for (const auto& dev : node.hdd_devices) used += dev.used;
             if (used > 0) ++used_nodes;
         }
-        std::cout << "File count: " << sim_stats_.inodes << "\n";
-        std::cout << "Average size: " << FormatBytes(static_cast<uint64_t>(avg)) << "\n";
-        std::cout << "Nodes used: " << used_nodes << "\n";
+        std::cout << u8"系统中包含文件数量为：" << sim_stats_.inodes << "\n";
+        std::cout << u8"平均文件大小为：" << FormatBytes(static_cast<uint64_t>(avg)) << "\n";
+        std::cout << u8"使用存储节点数量为：" << used_nodes << "\n";
     }
 
     void SimQueryFile(const std::string& path) {
@@ -376,205 +373,223 @@ private:
         if (size < 4096) size += 4096;
         double delay_ms = (static_cast<double>(size) / (100.0 * 1024 * 1024)) * 10.0;
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(delay_ms)));
-        std::cout << "Simulated query ok: " << path << "\n";
-        std::cout << "Size=" << FormatBytes(size) << ", delay=" << delay_ms << "ms\n";
+        std::cout << u8"SimTrue=1 表示从仿真系统查询。\n";
+        std::cout << u8"文件=" << path
+                  << u8"，模拟大小=" << FormatBytes(size)
+                  << u8"，模拟耗时=" << delay_ms << "ms\n";
     }
 
     void SimWriteFile(const std::string& source_path) {
         std::error_code ec;
         uint64_t size = fs::file_size(source_path, ec);
         if (ec) {
-            std::cerr << "Failed to stat file: " << ec.message() << "\n";
+            std::cout << u8"读取源文件失败：" << ec.message() << "\n";
             return;
         }
         double seconds = static_cast<double>(size) / (50.0 * 1024 * 1024);
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
         std::string node_id = sim_nodes_.empty() ? "none" : sim_nodes_[size % sim_nodes_.size()].node_id;
-        std::cout << "Simulated write ok. Size=" << FormatBytes(size)
-                  << ", node=" << node_id << "\n";
+        std::cout << u8"SimTrue=1 表示仿真写入。\n";
+        std::cout << u8"写入大小=" << FormatBytes(size)
+                  << u8"，写入存储节点ID=" << node_id << "\n";
     }
 
     void RealQueryFile(const std::string& path) {
-        if (!real_ready_) {
-            std::cerr << "Real client not ready.\n";
-            return;
-        }
+        std::string real_path = MakeMountedPath(path);
         struct stat st;
-        int rc = real_client_->GetAttr(path, &st);
-        if (rc != 0) {
-            std::cerr << "GetAttr failed: " << rc << "\n";
+        if (::stat(real_path.c_str(), &st) != 0) {
+            std::cout << u8"真实查询失败：" << real_path << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
-        std::cout << "Query ok: " << path << "\n";
-        std::cout << "Size=" << st.st_size << " bytes, mode=" << st.st_mode << "\n";
+        std::cout << u8"SimTrue=0 表示真实查询。\n";
+        std::cout << u8"文件=" << real_path
+                  << u8"，大小=" << st.st_size << u8" bytes"
+                  << u8"，权限=" << st.st_mode << "\n";
     }
 
     void RealWriteFile(const std::string& source_path, const std::string& dest_path) {
-        if (!real_ready_) {
-            std::cerr << "Real client not ready.\n";
+        std::string real_dest = MakeMountedPath(dest_path);
+        int in_fd = ::open(source_path.c_str(), O_RDONLY);
+        if (in_fd < 0) {
+            std::cout << u8"打开源文件失败：" << source_path << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
-        std::ifstream in(source_path, std::ios::binary);
-        if (!in.is_open()) {
-            std::cerr << "Failed to open source file: " << source_path << "\n";
-            return;
-        }
-        int fd = -1;
-        int rc = real_client_->Create(dest_path, O_CREAT | O_WRONLY | O_TRUNC, 0644, fd);
-        if (rc != 0) {
-            std::cerr << "Create failed: " << rc << "\n";
+        int out_fd = ::open(real_dest.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+        if (out_fd < 0) {
+            std::cout << u8"打开目标文件失败：" << real_dest << u8"，错误=" << std::strerror(errno) << "\n";
+            ::close(in_fd);
             return;
         }
         const size_t kBuf = 1 << 20;
         std::vector<char> buf(kBuf);
-        size_t total = 0;
-        off_t offset = 0;
-        while (in) {
-            in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
-            std::streamsize got = in.gcount();
-            if (got <= 0) break;
-            ssize_t written = 0;
-            rc = real_client_->Write(fd, buf.data(), static_cast<size_t>(got), offset, written);
-            if (rc != 0) {
-                std::cerr << "Write failed: " << rc << "\n";
-                break;
-            }
-            offset += written;
-            total += static_cast<size_t>(written);
-        }
-        real_client_->Close(fd);
-        std::cout << "Write ok: " << dest_path << " bytes=" << total << "\n";
-    }
-
-    void PrintHelp() {
-        std::cout << "Commands:\n"
-                  << "  backup <count> [sim|real]\n"
-                  << "  count [sim|real]\n"
-                  << "  query <path> [sim|real]\n"
-                  << "  write <src> [dest] [sim|real]\n"
-                  << "  count_total_capacity\n"
-                  << "  count_storage_nodes\n"
-                  << "  help\n"
-                  << "  exit\n";
-    }
-
-    void CountTotalCapacity() {
+        ssize_t read_bytes = 0;
         uint64_t total = 0;
-        for (const auto& node : sim_nodes_) {
-            for (const auto& dev : node.ssd_devices) total += dev.capacity;
-            for (const auto& dev : node.hdd_devices) total += dev.capacity;
+        while ((read_bytes = ::read(in_fd, buf.data(), buf.size())) > 0) {
+            size_t offset = 0;
+            while (offset < static_cast<size_t>(read_bytes)) {
+                ssize_t n = ::write(out_fd, buf.data() + offset, static_cast<size_t>(read_bytes) - offset);
+                if (n <= 0) {
+                    std::cout << u8"写入失败，错误=" << std::strerror(errno) << "\n";
+                    ::close(in_fd);
+                    ::close(out_fd);
+                    return;
+                }
+                offset += static_cast<size_t>(n);
+                total += static_cast<uint64_t>(n);
+            }
         }
-        std::cout << "Total simulated capacity: " << FormatBytes(total) << "\n";
+        ::close(in_fd);
+        ::close(out_fd);
+        std::cout << u8"SimTrue=0 表示真实写入。\n";
+        std::cout << u8"目标文件=" << real_dest
+                  << u8"，写入字节数=" << total << "\n";
     }
 
-    void CountStorageNodes() {
-        std::cout << "Total storage nodes: " << sim_nodes_.size() << "\n";
-    }
-
-    bool ParseSimFlag(const std::vector<std::string>& args, bool& sim) const {
-        if (args.empty()) {
-            sim = FLAGS_default_sim;
-            return true;
-        }
-        const std::string& tail = args.back();
-        if (tail == "sim") {
-            sim = true;
-            return true;
-        }
-        if (tail == "real") {
-            sim = false;
-            return true;
-        }
-        sim = FLAGS_default_sim;
-        return true;
-    }
-
-    void RunCommand(const std::vector<std::string>& args) {
-        if (args.empty()) return;
-        if (args[0] == "help") {
-            PrintHelp();
+    void RealReadFile(const std::string& path, uint64_t max_bytes) {
+        std::string real_path = MakeMountedPath(path);
+        int fd = ::open(real_path.c_str(), O_RDONLY);
+        if (fd < 0) {
+            std::cout << u8"读取失败：" << real_path << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
+        std::vector<char> buf(static_cast<size_t>(max_bytes));
+        ssize_t n = ::read(fd, buf.data(), buf.size());
+        if (n < 0) {
+            std::cout << u8"读取失败，错误=" << std::strerror(errno) << "\n";
+            ::close(fd);
+            return;
+        }
+        ::close(fd);
+        std::cout << u8"SimTrue=0 表示真实读取。\n";
+        std::cout << u8"文件=" << real_path << u8"，读取字节数=" << n << "\n";
+        if (n > 0) {
+            std::string out(buf.data(), buf.data() + n);
+            std::cout << u8"内容预览：\n" << out << "\n";
+        }
+    }
 
-        if (args[0] == "backup") {
-            if (args.size() < 2) {
-                std::cerr << "backup requires count\n";
-                return;
+    void PrintMenu() {
+        std::cout << "\n";
+        std::cout << u8"========== ZBSystemTest 菜单 ==========\n";
+        std::cout << u8"1) 批量备份（仿真）\n";
+        std::cout << u8"2) 统计文件数量（仿真）\n";
+        std::cout << u8"3) 查询文件（仿真）\n";
+        std::cout << u8"4) 写入文件（仿真）\n";
+        std::cout << u8"5) 统计总容量（仿真）\n";
+        std::cout << u8"6) 统计节点数量（仿真）\n";
+        std::cout << u8"7) 统计光盘库数量（仿真）\n";
+        std::cout << u8"8) 统计光盘数量（仿真）\n";
+        std::cout << u8"9) 真实查询文件（POSIX）\n";
+        std::cout << u8"10) 真实写入文件（POSIX）\n";
+        std::cout << u8"11) 真实读取文件（POSIX）\n";
+        std::cout << u8"q) 退出\n";
+        std::cout << u8"当前挂载点：" << FLAGS_mount_point << "\n";
+    }
+
+    void CountTotalCapacityStorage() {
+        uint64_t ssd = 0;
+        uint64_t hdd = 0;
+        for (const auto& node : sim_nodes_) {
+            for (const auto& dev : node.ssd_devices) ssd += dev.capacity;
+            for (const auto& dev : node.hdd_devices) hdd += dev.capacity;
+        }
+        uint64_t optical = 0;
+        std::cout << u8"固态盘容量：" << FormatBytes(ssd) << "\n";
+        std::cout << u8"磁盘容量：" << FormatBytes(hdd) << "\n";
+        std::cout << u8"光存储容量：" << FormatBytes(optical) << "\n";
+        std::cout << u8"总容量：" << FormatBytes(ssd + hdd + optical) << "\n";
+    }
+
+    void CountStorageNodeNum() {
+        uint64_t hdd_nodes = 0;
+        uint64_t mix_nodes = 0;
+        for (const auto& node : sim_nodes_) {
+            if (node.type == 1) {
+                ++hdd_nodes;
+            } else if (node.type == 2) {
+                ++mix_nodes;
             }
-            bool sim = FLAGS_default_sim;
-            ParseSimFlag(args, sim);
-            if (!sim) {
-                std::cerr << "Real backup not supported.\n";
-                return;
-            }
-            uint64_t count = std::stoull(args[1]);
+        }
+        uint64_t optical_nodes = 0;
+        std::cout << u8"磁盘节点数量：" << hdd_nodes << "\n";
+        std::cout << u8"混合节点数量：" << mix_nodes << "\n";
+        std::cout << u8"光盘库节点数量：" << optical_nodes << "\n";
+    }
+
+    void CountDiscLibNum() {
+        std::cout << u8"光盘库数量：0\n";
+    }
+
+    void CountDiscNum() {
+        std::cout << u8"光盘数量：0\n";
+    }
+
+    void HandleMenu(const std::string& choice) {
+        if (choice == "1") {
+            uint64_t count = PromptUint64(u8"请输入要备份的文件数量：");
             SimBackup(count);
             return;
         }
-
-        if (args[0] == "count") {
-            bool sim = FLAGS_default_sim;
-            ParseSimFlag(args, sim);
-            if (!sim) {
-                std::cerr << "Real count not supported.\n";
-                return;
-            }
+        if (choice == "2") {
             SimCountFileNum();
             return;
         }
-
-        if (args[0] == "query") {
-            if (args.size() < 2) {
-                std::cerr << "query requires path\n";
-                return;
-            }
-            bool sim = FLAGS_default_sim;
-            ParseSimFlag(args, sim);
-            if (sim) {
-                SimQueryFile(args[1]);
-            } else {
-                RealQueryFile(args[1]);
+        if (choice == "3") {
+            std::string path = PromptLine(u8"请输入要查询的文件路径（如 /path/file）：");
+            if (!path.empty()) {
+                SimQueryFile(path);
             }
             return;
         }
-
-        if (args[0] == "write") {
-            if (args.size() < 2) {
-                std::cerr << "write requires source file\n";
-                return;
+        if (choice == "4") {
+            std::string src = PromptLine(u8"请输入本地源文件路径：");
+            if (!src.empty()) {
+                SimWriteFile(src);
             }
-            bool sim = FLAGS_default_sim;
-            ParseSimFlag(args, sim);
-            const std::string& src = args[1];
-            std::string dest;
-            if (args.size() >= 3 && args[2] != "sim" && args[2] != "real") {
-                dest = args[2];
-            } else {
+            return;
+        }
+        if (choice == "5") {
+            CountTotalCapacityStorage();
+            return;
+        }
+        if (choice == "6") {
+            CountStorageNodeNum();
+            return;
+        }
+        if (choice == "7") {
+            CountDiscLibNum();
+            return;
+        }
+        if (choice == "8") {
+            CountDiscNum();
+            return;
+        }
+        if (choice == "9") {
+            std::string path = PromptLine(u8"请输入要查询的文件路径（挂载点内，如 /hello.txt）：");
+            if (!path.empty()) {
+                RealQueryFile(path);
+            }
+            return;
+        }
+        if (choice == "10") {
+            std::string src = PromptLine(u8"请输入本地源文件路径：");
+            if (src.empty()) return;
+            std::string dest = PromptLine(u8"请输入写入路径（挂载点内路径，如 /hello.txt，留空默认同名）：");
+            if (dest.empty()) {
                 dest = "/" + fs::path(src).filename().string();
             }
-            if (sim) {
-                SimWriteFile(src);
-            } else {
-                RealWriteFile(src, dest);
-            }
+            RealWriteFile(src, dest);
             return;
         }
-
-        if (args[0] == "count_total_capacity") {
-            CountTotalCapacity();
+        if (choice == "11") {
+            std::string path = PromptLine(u8"请输入要读取的文件路径（挂载点内，如 /hello.txt）：");
+            if (path.empty()) return;
+            uint64_t max_bytes = PromptUint64(u8"请输入读取上限字节数（默认 4096）：", 4096);
+            RealReadFile(path, max_bytes);
             return;
         }
-
-        if (args[0] == "count_storage_nodes") {
-            CountStorageNodes();
-            return;
-        }
-
-        std::cerr << "Unknown command: " << args[0] << "\n";
+        std::cout << u8"未知选项：" << choice << "\n";
     }
-
-    std::shared_ptr<DfsClient> real_client_;
-    bool real_ready_{false};
 
     std::vector<NodeState> sim_nodes_;
     std::unordered_map<std::string, size_t> sim_node_index_;
@@ -594,11 +609,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!FLAGS_command.empty()) {
-        tester.RunOneShot(FLAGS_command);
-        return 0;
-    }
-
-    tester.RunInteractive();
+    tester.RunMenu();
     return 0;
 }
