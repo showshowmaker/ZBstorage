@@ -39,6 +39,9 @@ DEFINE_uint64(hdd_capacity_bytes, 0, "HDD device capacity bytes");
 
 namespace {
 
+constexpr const char* kMenuSeparator = "========================================";
+constexpr const char* kOutputSeparator = "----------------------------------------";
+
 struct DeviceState {
     std::string device_id;
     uint64_t capacity{0};
@@ -59,34 +62,6 @@ struct Stats {
     uint64_t missing_node{0};
 };
 
-const char* kColorMenu = "\033[36m";
-const char* kColorPrompt = "\033[33m";
-const char* kColorInput = "\033[35m";
-const char* kColorResult = "\033[32m";
-const char* kColorError = "\033[31m";
-const char* kColorReset = "\033[0m";
-
-bool UseColor() {
-    return ::isatty(STDOUT_FILENO) != 0;
-}
-
-class ColorScope {
-public:
-    explicit ColorScope(const char* color) : enabled_(UseColor()) {
-        if (enabled_) {
-            std::cout << color;
-        }
-    }
-    ~ColorScope() {
-        if (enabled_) {
-            std::cout << kColorReset;
-        }
-    }
-
-private:
-    bool enabled_;
-};
-
 std::string FormatBytes(uint64_t bytes) {
     const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB"};
     double value = static_cast<double>(bytes);
@@ -104,20 +79,15 @@ std::string FormatBytes(uint64_t bytes) {
     return oss.str();
 }
 
+void PrintOutputHeader() {
+    std::cout << kOutputSeparator << "\n";
+}
+
 std::string PromptLine(const std::string& tip) {
-    if (UseColor()) {
-        std::cout << kColorPrompt;
-    }
     std::cout << tip;
-    if (UseColor()) {
-        std::cout << kColorInput;
-    }
     std::cout.flush();
     std::string line;
     std::getline(std::cin, line);
-    if (UseColor()) {
-        std::cout << kColorReset;
-    }
     return line;
 }
 
@@ -130,7 +100,7 @@ uint64_t PromptUint64(const std::string& tip, uint64_t default_value = 0) {
         try {
             return std::stoull(line);
         } catch (...) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"???????????\n";
         }
     }
@@ -250,7 +220,7 @@ public:
     bool Init() {
         InitSimState();
         if (!FLAGS_mount_point.empty() && !fs::exists(FLAGS_mount_point)) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"??????????????" << FLAGS_mount_point << "\n";
         }
         return true;
@@ -354,7 +324,7 @@ private:
                 }
             }
             if (!found) {
-                ColorScope scope(kColorError);
+                PrintOutputHeader();
                 std::cout << u8"????????" << FLAGS_start_file << "\n";
             }
         }
@@ -398,7 +368,7 @@ private:
 
     bool SimBackup(uint64_t count) {
         if (bin_files_.empty()) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"??? inode ???????? --inode_dir?\n";
             return false;
         }
@@ -411,7 +381,7 @@ private:
             const auto& path = bin_files_[current_bin_file_idx_];
             std::ifstream in(path, std::ios::binary);
             if (!in.is_open()) {
-                ColorScope scope(kColorError);
+                PrintOutputHeader();
                 std::cout << u8"???? inode ???" << path.string() << "\n";
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
@@ -427,7 +397,7 @@ private:
 
             const uint64_t slot_size = DetectSlotSize(in, static_cast<uint64_t>(total_bytes));
             if (slot_size == 0) {
-                ColorScope scope(kColorError);
+                PrintOutputHeader();
                 std::cout << u8"???? inode ?????????" << path.string() << "\n";
                 ++current_bin_file_idx_;
                 current_file_offset_ = 0;
@@ -448,7 +418,7 @@ private:
                 in.read(reinterpret_cast<char*>(slot.data()), static_cast<std::streamsize>(slot_size));
                 if (in.gcount() != static_cast<std::streamsize>(slot_size)) {
                     current_file_offset_ = total_slots;
-                    ColorScope scope(kColorError);
+                    PrintOutputHeader();
                     std::cout << u8"?????????????????????" << path.filename().string() << "\n";
                     break;
                 }
@@ -476,16 +446,13 @@ private:
 
         auto end = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        {
-            ColorScope scope(kColorResult);
-            std::cout << u8"?????? " << processed << u8" ????\n";
-            std::cout << u8"?????" << elapsed / 1000.0 << u8" ??\n";
-            std::cout << u8"??????????" << sim_stats_.inodes
-                      << u8"????????" << FormatBytes(sim_stats_.bytes) << "\n";
-            std::cout << u8"?????????" << failed << "\n";
-        }
+        PrintOutputHeader();
+        std::cout << u8"?????? " << processed << u8" ????\n";
+        std::cout << u8"?????" << elapsed / 1000.0 << u8" ??\n";
+        std::cout << u8"??????????" << sim_stats_.inodes
+                  << u8"????????" << FormatBytes(sim_stats_.bytes) << "\n";
+        std::cout << u8"?????????" << failed << "\n";
         if (sim_stats_.inodes == 0 && failed > 0) {
-            ColorScope scope(kColorError);
             std::cout << u8"????????????????? inode ????????????\n";
         }
         return true;
@@ -493,7 +460,7 @@ private:
 
     void SimCountFileNum() {
         if (sim_stats_.inodes == 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"???????????\n";
             return;
         }
@@ -505,7 +472,7 @@ private:
             for (const auto& dev : node.hdd_devices) used += dev.used;
             if (used > 0) ++used_nodes;
         }
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"???????????" << sim_stats_.inodes << "\n";
         std::cout << u8"????????" << FormatBytes(static_cast<uint64_t>(avg)) << "\n";
         std::cout << u8"??????????" << used_nodes << "\n";
@@ -517,7 +484,7 @@ private:
         if (size < 4096) size += 4096;
         double delay_ms = (static_cast<double>(size) / (100.0 * 1024 * 1024)) * 10.0;
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(delay_ms)));
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"SimTrue=1 ??????????\n";
         std::cout << u8"??=" << path
                   << u8"?????=" << FormatBytes(size)
@@ -528,14 +495,14 @@ private:
         std::error_code ec;
         uint64_t size = fs::file_size(source_path, ec);
         if (ec) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"????????" << ec.message() << "\n";
             return;
         }
         double seconds = static_cast<double>(size) / (50.0 * 1024 * 1024);
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
         std::string node_id = sim_nodes_.empty() ? "none" : sim_nodes_[size % sim_nodes_.size()].node_id;
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"SimTrue=1 ???????\n";
         std::cout << u8"????=" << FormatBytes(size)
                   << u8"???????ID=" << node_id << "\n";
@@ -545,12 +512,12 @@ private:
         std::string real_path = MakeMountedPath(path);
         struct stat st;
         if (::stat(real_path.c_str(), &st) != 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"[ERROR] ???????" << real_path
                       << u8"???=" << std::strerror(errno) << "\n";
             return;
         }
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"==== ???? ====\n";
         std::cout << u8"SimTrue=0 ???????\n";
         std::cout << u8"??=" << real_path
@@ -562,7 +529,7 @@ private:
         std::string real_dest = MakeMountedPath(dest_path);
         int out_fd = ::open(real_dest.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (out_fd < 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"[ERROR] ?????????" << real_dest
                       << u8"???=" << std::strerror(errno) << "\n";
             return;
@@ -572,7 +539,7 @@ private:
         while (offset < total) {
             ssize_t n = ::write(out_fd, content.data() + offset, total - offset);
             if (n <= 0) {
-                ColorScope scope(kColorError);
+                PrintOutputHeader();
                 std::cout << u8"[ERROR] ???????=" << std::strerror(errno) << "\n";
                 ::close(out_fd);
                 return;
@@ -580,7 +547,7 @@ private:
             offset += static_cast<size_t>(n);
         }
         ::close(out_fd);
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"==== ???? ====\n";
         std::cout << u8"SimTrue=0 ???????\n";
         std::cout << u8"????=" << real_dest
@@ -591,14 +558,14 @@ private:
         std::string real_path = MakeMountedPath(path);
         int fd = ::open(real_path.c_str(), O_RDONLY);
         if (fd < 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"[ERROR] ?????" << real_path
                       << u8"???=" << std::strerror(errno) << "\n";
             return;
         }
         struct stat st;
         if (fstat(fd, &st) != 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"[ERROR] ?????????" << std::strerror(errno) << "\n";
             ::close(fd);
             return;
@@ -613,31 +580,28 @@ private:
         std::vector<char> buf(static_cast<size_t>(to_read));
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n < 0) {
-            ColorScope scope(kColorError);
+            PrintOutputHeader();
             std::cout << u8"[ERROR] ???????=" << std::strerror(errno) << "\n";
             ::close(fd);
             return;
         }
         ::close(fd);
-        {
-            ColorScope scope(kColorResult);
-            std::cout << u8"==== ???? ====\n";
-            std::cout << u8"SimTrue=0 ???????\n";
-            std::cout << u8"??=" << real_path << u8"??????=" << n;
-            if (truncated) {
-                std::cout << u8"??????????";
-            }
-            std::cout << "\n";
-            if (n > 0) {
-                std::string out(buf.data(), buf.data() + n);
-                std::cout << u8"???\n" << out << "\n";
-            }
+        PrintOutputHeader();
+        std::cout << u8"==== ???? ====\n";
+        std::cout << u8"SimTrue=0 ???????\n";
+        std::cout << u8"??=" << real_path << u8"??????=" << n;
+        if (truncated) {
+            std::cout << u8"??????????";
+        }
+        std::cout << "\n";
+        if (n > 0) {
+            std::string out(buf.data(), buf.data() + n);
+            std::cout << u8"???\n" << out << "\n";
         }
     }
 
     void PrintMenu() {
-        ColorScope scope(kColorMenu);
-        std::cout << "\n";
+        std::cout << "\n" << kMenuSeparator << "\n";
         std::cout << u8"========== ZBSystemTest ?? ==========\n";
         std::cout << u8"1) ????????\n";
         std::cout << u8"2) ??????????\n";
@@ -652,6 +616,7 @@ private:
         std::cout << u8"11) ???????POSIX??????\n";
         std::cout << u8"q) ??\n";
         std::cout << u8"??????" << FLAGS_mount_point << "\n";
+        std::cout << kMenuSeparator << "\n";
     }
 
     void CountTotalCapacityStorage() {
@@ -662,7 +627,7 @@ private:
             for (const auto& dev : node.hdd_devices) hdd += dev.capacity;
         }
         uint64_t optical = 0;
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"??????" << FormatBytes(ssd) << "\n";
         std::cout << u8"?????" << FormatBytes(hdd) << "\n";
         std::cout << u8"??????" << FormatBytes(optical) << "\n";
@@ -680,19 +645,19 @@ private:
             }
         }
         uint64_t optical_nodes = 0;
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"???????" << hdd_nodes << "\n";
         std::cout << u8"???????" << mix_nodes << "\n";
         std::cout << u8"????????" << optical_nodes << "\n";
     }
 
     void CountDiscLibNum() {
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"??????0\n";
     }
 
     void CountDiscNum() {
-        ColorScope scope(kColorResult);
+        PrintOutputHeader();
         std::cout << u8"?????0\n";
     }
 
@@ -756,7 +721,7 @@ private:
             RealReadFile(path);
             return;
         }
-        ColorScope scope(kColorError);
+        PrintOutputHeader();
         std::cout << u8"?????" << choice << "\n";
     }
 
