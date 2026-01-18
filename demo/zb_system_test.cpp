@@ -366,6 +366,8 @@ private:
             while (processed < count && current_file_offset_ < total_slots) {
                 in.read(reinterpret_cast<char*>(slot.data()), static_cast<std::streamsize>(slot_size));
                 if (in.gcount() != static_cast<std::streamsize>(slot_size)) {
+                    current_file_offset_ = total_slots;
+                    std::cout << u8"读取到文件尾或读取失败，切换到下一个文件：" << path.filename().string() << "\n";
                     break;
                 }
                 size_t off = 0;
@@ -666,3 +668,4 @@ int main(int argc, char** argv) {
     tester.RunMenu();
     return 0;
 }
+
