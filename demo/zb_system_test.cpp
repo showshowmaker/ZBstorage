@@ -130,6 +130,44 @@ void Consume(std::vector<DeviceState>& devices, uint64_t& remaining) {
     }
 }
 
+bool CanDeserializeInode(const uint8_t* data, size_t total_size) {
+    size_t offset = 0;
+    auto safe_read = [&](void* dest, size_t len) -> bool {
+        if (offset + len > total_size) return false;
+        std::memcpy(dest, data + offset, len);
+        offset += len;
+        return true;
+    };
+
+    Inode inode;
+    if (!safe_read(&inode.location_id.raw, sizeof(inode.location_id.raw))) return false;
+    if (!safe_read(&inode.block_id, sizeof(inode.block_id))) return false;
+    if (!safe_read(&inode.filename_len, sizeof(inode.filename_len))) return false;
+    if (!safe_read(&inode.digest_len, sizeof(inode.digest_len))) return false;
+    if (!safe_read(&inode.file_mode.raw, sizeof(inode.file_mode.raw))) return false;
+    if (!safe_read(&inode.file_size.raw, sizeof(inode.file_size.raw))) return false;
+    if (!safe_read(&inode.inode, sizeof(inode.inode))) return false;
+    if (offset + Inode::kNamespaceIdLen > total_size) return false;
+    offset += Inode::kNamespaceIdLen;
+    if (!safe_read(&inode.fm_time, sizeof(inode.fm_time))) return false;
+    if (!safe_read(&inode.fa_time, sizeof(inode.fa_time))) return false;
+    if (!safe_read(&inode.im_time, sizeof(inode.im_time))) return false;
+    if (!safe_read(&inode.fc_time, sizeof(inode.fc_time))) return false;
+
+    if (offset + inode.filename_len + inode.digest_len > total_size) return false;
+    offset += inode.filename_len + inode.digest_len;
+
+    uint8_t volume_id_len = 0;
+    if (!safe_read(&volume_id_len, sizeof(volume_id_len))) return false;
+    if (offset + volume_id_len > total_size) return false;
+    offset += volume_id_len;
+
+    uint32_t segment_count = 0;
+    if (!safe_read(&segment_count, sizeof(segment_count))) return false;
+    if (offset + static_cast<size_t>(segment_count) * sizeof(BlockSegment) > total_size) return false;
+    return true;
+}
+
 uint64_t DetectSlotSize(std::ifstream& in, const fs::path& path, uint64_t file_size) {
     std::vector<uint64_t> candidates = {
         InodeStorage::INODE_DISK_SLOT_SIZE,
@@ -161,9 +199,7 @@ uint64_t DetectSlotSize(std::ifstream& in, const fs::path& path, uint64_t file_s
         if (candidate > static_cast<uint64_t>(got)) {
             continue;
         }
-        size_t off = 0;
-        Inode inode;
-        if (Inode::deserialize(buf.data(), off, inode, static_cast<size_t>(candidate))) {
+        if (CanDeserializeInode(buf.data(), static_cast<size_t>(candidate))) {
             return candidate;
         }
     }
@@ -668,4 +704,5 @@ int main(int argc, char** argv) {
     tester.RunMenu();
     return 0;
 }
+
 
