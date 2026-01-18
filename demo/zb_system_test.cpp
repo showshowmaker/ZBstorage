@@ -168,7 +168,7 @@ bool CanDeserializeInode(const uint8_t* data, size_t total_size) {
     return true;
 }
 
-uint64_t DetectSlotSize(std::ifstream& in, const fs::path& path, uint64_t file_size) {
+uint64_t DetectSlotSize(std::ifstream& in, uint64_t file_size) {
     std::vector<uint64_t> candidates = {
         InodeStorage::INODE_DISK_SLOT_SIZE,
         1024,
@@ -205,6 +205,7 @@ uint64_t DetectSlotSize(std::ifstream& in, const fs::path& path, uint64_t file_s
     }
     return 0;
 }
+
 class SystemTester {
 public:
     bool Init() {
@@ -354,7 +355,7 @@ private:
         return true;
     }
 
-        bool SimBackup(uint64_t count) {
+    bool SimBackup(uint64_t count) {
         if (bin_files_.empty()) {
             std::cout << u8"找不到 inode 批量文件，请设置 --inode_dir。\n";
             return false;
@@ -381,7 +382,7 @@ private:
                 continue;
             }
 
-            const uint64_t slot_size = DetectSlotSize(in, path, static_cast<uint64_t>(total_bytes));
+            const uint64_t slot_size = DetectSlotSize(in, static_cast<uint64_t>(total_bytes));
             if (slot_size == 0) {
                 std::cout << u8"无法识别 inode 槽大小，跳过文件：" << path.string() << "\n";
                 ++current_bin_file_idx_;
@@ -490,73 +491,82 @@ private:
         std::string real_path = MakeMountedPath(path);
         struct stat st;
         if (::stat(real_path.c_str(), &st) != 0) {
-            std::cout << u8"真实查询失败：" << real_path << u8"，错误=" << std::strerror(errno) << "\n";
+            std::cout << u8"[ERROR] 真实查询失败：" << real_path
+                      << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
+        std::cout << u8"==== 操作结果 ====\n";
         std::cout << u8"SimTrue=0 表示真实查询。\n";
         std::cout << u8"文件=" << real_path
                   << u8"，大小=" << st.st_size << u8" bytes"
                   << u8"，权限=" << st.st_mode << "\n";
     }
 
-    void RealWriteFile(const std::string& source_path, const std::string& dest_path) {
+    void RealWriteContent(const std::string& dest_path, const std::string& content) {
         std::string real_dest = MakeMountedPath(dest_path);
-        int in_fd = ::open(source_path.c_str(), O_RDONLY);
-        if (in_fd < 0) {
-            std::cout << u8"打开源文件失败：" << source_path << u8"，错误=" << std::strerror(errno) << "\n";
-            return;
-        }
         int out_fd = ::open(real_dest.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (out_fd < 0) {
-            std::cout << u8"打开目标文件失败：" << real_dest << u8"，错误=" << std::strerror(errno) << "\n";
-            ::close(in_fd);
+            std::cout << u8"[ERROR] 打开目标文件失败：" << real_dest
+                      << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
-        const size_t kBuf = 1 << 20;
-        std::vector<char> buf(kBuf);
-        ssize_t read_bytes = 0;
-        uint64_t total = 0;
-        while ((read_bytes = ::read(in_fd, buf.data(), buf.size())) > 0) {
-            size_t offset = 0;
-            while (offset < static_cast<size_t>(read_bytes)) {
-                ssize_t n = ::write(out_fd, buf.data() + offset, static_cast<size_t>(read_bytes) - offset);
-                if (n <= 0) {
-                    std::cout << u8"写入失败，错误=" << std::strerror(errno) << "\n";
-                    ::close(in_fd);
-                    ::close(out_fd);
-                    return;
-                }
-                offset += static_cast<size_t>(n);
-                total += static_cast<uint64_t>(n);
+        size_t offset = 0;
+        const size_t total = content.size();
+        while (offset < total) {
+            ssize_t n = ::write(out_fd, content.data() + offset, total - offset);
+            if (n <= 0) {
+                std::cout << u8"[ERROR] 写入失败，错误=" << std::strerror(errno) << "\n";
+                ::close(out_fd);
+                return;
             }
+            offset += static_cast<size_t>(n);
         }
-        ::close(in_fd);
         ::close(out_fd);
+        std::cout << u8"==== 操作结果 ====\n";
         std::cout << u8"SimTrue=0 表示真实写入。\n";
         std::cout << u8"目标文件=" << real_dest
                   << u8"，写入字节数=" << total << "\n";
     }
 
-    void RealReadFile(const std::string& path, uint64_t max_bytes) {
+    void RealReadFile(const std::string& path) {
         std::string real_path = MakeMountedPath(path);
         int fd = ::open(real_path.c_str(), O_RDONLY);
         if (fd < 0) {
-            std::cout << u8"读取失败：" << real_path << u8"，错误=" << std::strerror(errno) << "\n";
+            std::cout << u8"[ERROR] 读取失败：" << real_path
+                      << u8"，错误=" << std::strerror(errno) << "\n";
             return;
         }
-        std::vector<char> buf(static_cast<size_t>(max_bytes));
+        struct stat st;
+        if (fstat(fd, &st) != 0) {
+            std::cout << u8"[ERROR] 获取文件大小失败：" << std::strerror(errno) << "\n";
+            ::close(fd);
+            return;
+        }
+        const uint64_t max_read = 4ULL * 1024 * 1024;
+        uint64_t to_read = static_cast<uint64_t>(st.st_size);
+        bool truncated = false;
+        if (to_read > max_read) {
+            to_read = max_read;
+            truncated = true;
+        }
+        std::vector<char> buf(static_cast<size_t>(to_read));
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n < 0) {
-            std::cout << u8"读取失败，错误=" << std::strerror(errno) << "\n";
+            std::cout << u8"[ERROR] 读取失败，错误=" << std::strerror(errno) << "\n";
             ::close(fd);
             return;
         }
         ::close(fd);
+        std::cout << u8"==== 操作结果 ====\n";
         std::cout << u8"SimTrue=0 表示真实读取。\n";
-        std::cout << u8"文件=" << real_path << u8"，读取字节数=" << n << "\n";
+        std::cout << u8"文件=" << real_path << u8"，读取字节数=" << n;
+        if (truncated) {
+            std::cout << u8"（内容过大，已截断）";
+        }
+        std::cout << "\n";
         if (n > 0) {
             std::string out(buf.data(), buf.data() + n);
-            std::cout << u8"内容预览：\n" << out << "\n";
+            std::cout << u8"内容：\n" << out << "\n";
         }
     }
 
@@ -572,8 +582,8 @@ private:
         std::cout << u8"7) 统计光盘库数量（仿真）\n";
         std::cout << u8"8) 统计光盘数量（仿真）\n";
         std::cout << u8"9) 真实查询文件（POSIX）\n";
-        std::cout << u8"10) 真实写入文件（POSIX）\n";
-        std::cout << u8"11) 真实读取文件（POSIX）\n";
+        std::cout << u8"10) 真实写入文件（POSIX，输入路径+内容）\n";
+        std::cout << u8"11) 真实读取文件（POSIX，输入路径）\n";
         std::cout << u8"q) 退出\n";
         std::cout << u8"当前挂载点：" << FLAGS_mount_point << "\n";
     }
@@ -664,20 +674,16 @@ private:
             return;
         }
         if (choice == "10") {
-            std::string src = PromptLine(u8"请输入本地源文件路径：");
-            if (src.empty()) return;
-            std::string dest = PromptLine(u8"请输入写入路径（挂载点内路径，如 /hello.txt，留空默认同名）：");
-            if (dest.empty()) {
-                dest = "/" + fs::path(src).filename().string();
-            }
-            RealWriteFile(src, dest);
+            std::string dest = PromptLine(u8"请输入写入路径（挂载点内，如 /hello.txt）：");
+            if (dest.empty()) return;
+            std::string content = PromptLine(u8"请输入要写入的内容（单行）：");
+            RealWriteContent(dest, content);
             return;
         }
         if (choice == "11") {
             std::string path = PromptLine(u8"请输入要读取的文件路径（挂载点内，如 /hello.txt）：");
             if (path.empty()) return;
-            uint64_t max_bytes = PromptUint64(u8"请输入读取上限字节数（默认 4096）：", 4096);
-            RealReadFile(path, max_bytes);
+            RealReadFile(path);
             return;
         }
         std::cout << u8"未知选项：" << choice << "\n";
@@ -704,5 +710,3 @@ int main(int argc, char** argv) {
     tester.RunMenu();
     return 0;
 }
-
-
